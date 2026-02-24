@@ -4,6 +4,32 @@ const TurfRental = require("../models/TurfRental");
 const FacilitySlot = require("../models/FacilitySlot");
 
 /* ======================================================
+   HELPER: SYNC USER SNAPSHOT DATA
+====================================================== */
+async function syncUserSnapshot(updatedUser) {
+  const idString = updatedUser._id.toString();
+
+  const filter = {
+    userId: {
+      $in: [updatedUser._id, idString],
+    },
+  };
+
+  const updateData = {
+    playerName: updatedUser.name,
+    mobile: updatedUser.mobile,
+    email: updatedUser.email,
+    address: updatedUser.address,
+  };
+
+  await Promise.all([
+    Enrollment.updateMany(filter, { $set: updateData }),
+    TurfRental.updateMany(filter, { $set: updateData }),
+  ]);
+}
+
+
+/* ======================================================
    GET MY PROFILE
 ====================================================== */
 exports.getMyProfile = async (req, res) => {
@@ -34,58 +60,28 @@ exports.updateProfile = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const { role, password, ...safeUpdates } = req.body;
-
     const updatedUser = await User.findByIdAndUpdate(
       userId,
-      { $set: safeUpdates },
+      { $set: req.body },
       { new: true, runValidators: true }
-    ).select("-password");
+    );
 
     if (!updatedUser) {
-      return res.status(404).json({
-        message: "User not found",
-      });
+      return res.status(404).json({ message: "User not found" });
     }
 
-    /* ================= SYNC ENROLLMENTS ================= */
-    await Enrollment.updateMany(
-      { userId },
-      {
-        $set: {
-          playerName: updatedUser.fullName,
-          mobile: updatedUser.mobile,
-          email: updatedUser.email,
-          address: updatedUser.address,
-        },
-      }
-    );
-
-    /* ================= SYNC TURF BOOKINGS ================= */
-    await TurfRental.updateMany(
-      { userId },
-      {
-        $set: {
-          userName: updatedUser.fullName,
-          phone: updatedUser.mobile,
-          email: updatedUser.email,
-          address: updatedUser.address,
-        },
-      }
-    );
+    await syncUserSnapshot(updatedUser);
 
     res.json({
-      message: "Profile updated & synced successfully",
+      message: "Profile updated",
       user: updatedUser,
     });
+
   } catch (err) {
-    console.error("UPDATE PROFILE ERROR:", err);
-    res.status(500).json({
-      message: "Failed to update profile",
-    });
+    console.error("PROFILE UPDATE ERROR:", err);
+    res.status(500).json({ message: "Update failed" });
   }
 };
-
 /* ======================================================
    GET MY ENROLLMENTS
 ====================================================== */
@@ -272,22 +268,25 @@ exports.adminUpdateUser = async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    const { password } = req.body; // prevent password update here
+    const { password, ...updateData } = req.body;
 
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
-      { $set: req.body },
+      { $set: updateData },
       { new: true, runValidators: true }
-    ).select("-password");
+    );
 
     if (!updatedUser) {
       return res.status(404).json({ message: "User not found" });
     }
 
+    await syncUserSnapshot(updatedUser);
+
     res.json({
       message: "User updated successfully",
       user: updatedUser,
     });
+
   } catch (err) {
     console.error("ADMIN UPDATE USER ERROR:", err);
     res.status(500).json({ message: "Failed to update user" });
@@ -317,10 +316,6 @@ exports.deleteUser = async (req, res) => {
     }
 
     await User.findByIdAndDelete(req.params.id);
-
-    // Optional: Also delete related data
-    await Enrollment.deleteMany({ userId: user._id });
-    await TurfRental.deleteMany({ userId: user._id });
 
     res.json({ message: "User deleted successfully" });
   } catch (err) {
