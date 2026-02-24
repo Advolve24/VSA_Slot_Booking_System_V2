@@ -35,6 +35,7 @@ const LEVELS = ["Beginner", "Intermediate", "Advanced"];
 /* -------------------------------- */
 
 export default function CoachingBatches() {
+  const [loading, setLoading] = useState(false);
   const ITEMS_PER_PAGE = 5;
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -230,6 +231,10 @@ export default function CoachingBatches() {
   };
 
   const saveBatch = async () => {
+    if (loading) return; // 🚫 prevent double click
+
+    setLoading(true);
+
     try {
       const payload = {
         ...form,
@@ -250,33 +255,46 @@ export default function CoachingBatches() {
         if (slotAction === "activate") {
           payload.slotAction = "activate";
           if (!payload.slotId) {
+            setLoading(false);
             return toast({
               variant: "destructive",
               title: "Slot required",
             });
           }
         }
+
         await api.put(`/batches/${selected._id}`, payload);
+
       } else {
         if (!payload.slotId) {
+          setLoading(false);
           return toast({
             variant: "destructive",
             title: "Slot required",
           });
         }
+
         await api.post("/batches", payload);
       }
+
       toast({
-        title: drawer === "add" ? "Batch added" : "Batch updated",
+        title: drawer === "add"
+          ? "Batch added successfully"
+          : "Batch updated successfully",
       });
+
       setDrawer(null);
+      setForm({});
       fetchAll();
+
     } catch (err) {
       toast({
         variant: "destructive",
         title: "Action failed",
         description: err.response?.data?.message || "Server error",
       });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -903,10 +921,15 @@ export default function CoachingBatches() {
                 <div className="shrink-0 border-t bg-white px-4 py-4">
                   <div className="flex gap-3">
                     <Button
+                      disabled={loading}
                       className="bg-green-700 w-full md:w-[50%]"
                       onClick={saveBatch}
                     >
-                      {drawer === "add" ? "Add Batch" : "Save Changes"}
+                      {loading
+                        ? "Saving..."
+                        : drawer === "add"
+                          ? "Add Batch"
+                          : "Save Changes"}
                     </Button>
 
                     <Button

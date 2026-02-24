@@ -30,7 +30,6 @@ export default function AdminLogin() {
 
       setAuth(res.data.token, res.data.user);
       navigate("/admin");
-
     } catch (err) {
       setError(err.response?.data?.message || "Invalid credentials");
     } finally {
@@ -39,10 +38,10 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row">
+    <div className="h-screen flex flex-col lg:flex-row overflow-hidden">
 
-      {/* ================= LEFT IMAGE SIDE ================= */}
-      <div className="hidden lg:flex lg:w-1/2 relative">
+      {/* ================= IMAGE SECTION ================= */}
+      <div className="relative h-[30vh] lg:h-auto lg:w-1/2">
 
         <img
           src={bgImage}
@@ -50,66 +49,59 @@ export default function AdminLogin() {
           className="absolute inset-0 w-full h-full object-cover"
         />
 
-        {/* Overlay */}
         <div className="absolute inset-0 bg-gradient-to-br from-green-900/70 to-black/60" />
 
-        {/* Content */}
-        <div className="relative z-10 flex flex-col justify-end p-12 text-white space-y-4">
+        <div className="relative z-10 flex flex-col justify-end h-full px-4 pb-4 lg:p-12 text-white space-y-2">
 
-          <img src={logo} alt="VSA Logo" className="w-14 mb-4" />
+          <img src={logo} alt="VSA Logo" className="w-10 lg:w-14" />
 
-          <h1 className="text-4xl font-bold">
+          <h1 className="text-lg lg:text-4xl font-semibold leading-tight">
             VSA Slot Booking System
           </h1>
 
-          <p className="text-gray-200 max-w-md">
-            Manage sports facility bookings, schedules and availability —
-            all from one powerful admin dashboard.
+          <p className="text-xs lg:text-base text-gray-200 max-w-md">
+           Manage sports facility bookings, schedules and availability — all from one powerful admin dashboard.
           </p>
 
         </div>
       </div>
 
-      {/* ================= RIGHT FORM SIDE ================= */}
-      <div className="flex flex-1 items-center justify-center bg-gray-50 px-6 py-12">
+      {/* ================= FORM SECTION ================= */}
+      <div className="flex flex-1 items-center justify-center bg-gray-50 px-4 lg:px-6 py-4 lg:py-12">
 
-        <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-lg border">
+        <div className="w-full max-w-md bg-white p-5 lg:p-8 rounded-2xl shadow-lg border">
 
-          {/* Logo (Mobile Only) */}
-          <div className="flex justify-center mb-6 lg:hidden">
-            <img src={logo} alt="VSA Logo" className="w-16" />
-          </div>
-
-          <h2 className="text-2xl font-semibold text-gray-800">
+          <h2 className="text-xl lg:text-2xl font-semibold text-gray-800">
             Admin Login
           </h2>
-          <p className="text-sm text-gray-500 mb-6">
-            Enter your credentials to continue
+
+          <p className="text-xs lg:text-sm text-gray-500 mb-4 lg:mb-6">
+            Enter your credentials
           </p>
 
           {error && (
-            <div className="bg-red-100 text-red-600 text-sm p-3 rounded-lg mb-4">
+            <div className="bg-red-100 text-red-600 text-xs p-2 rounded-lg mb-3">
               {error}
             </div>
           )}
 
-          <form onSubmit={submit} className="space-y-5">
+          <form onSubmit={submit} className="space-y-4">
 
             {/* EMAIL */}
             <div>
-              <label className="text-sm font-medium text-gray-700">
-                Email Address
+              <label className="text-xs lg:text-sm font-medium text-gray-700">
+                Email
               </label>
 
-              <div className="relative mt-2">
+              <div className="relative mt-1">
                 <Mail
-                  size={18}
+                  size={16}
                   className="absolute left-3 top-3 text-gray-400"
                 />
 
                 <input
                   type="email"
-                  className="w-full pl-10 pr-3 py-3 border rounded-xl focus:ring-2 focus:ring-green-600 outline-none"
+                  className="w-full pl-9 pr-3 py-2.5 lg:py-3 border rounded-xl focus:ring-2 focus:ring-green-600 outline-none text-sm"
                   placeholder="admin@vsa.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -120,19 +112,19 @@ export default function AdminLogin() {
 
             {/* PASSWORD */}
             <div>
-              <label className="text-sm font-medium text-gray-700">
+              <label className="text-xs lg:text-sm font-medium text-gray-700">
                 Password
               </label>
 
-              <div className="relative mt-2">
+              <div className="relative mt-1">
                 <Lock
-                  size={18}
+                  size={16}
                   className="absolute left-3 top-3 text-gray-400"
                 />
 
                 <input
                   type={showPassword ? "text" : "password"}
-                  className="w-full pl-10 pr-10 py-3 border rounded-xl focus:ring-2 focus:ring-green-600 outline-none"
+                  className="w-full pl-9 pr-9 py-2.5 lg:py-3 border rounded-xl focus:ring-2 focus:ring-green-600 outline-none text-sm"
                   placeholder="Enter password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -144,7 +136,7 @@ export default function AdminLogin() {
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-3 text-gray-400"
                 >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
             </div>
@@ -153,7 +145,7 @@ export default function AdminLogin() {
             <div className="text-right">
               <button
                 type="button"
-                className="text-sm text-green-700 hover:underline"
+                className="text-xs text-green-700 hover:underline"
               >
                 Forgot Password?
               </button>
@@ -162,15 +154,15 @@ export default function AdminLogin() {
             {/* LOGIN BUTTON */}
             <button
               disabled={loading}
-              className="w-full bg-green-700 hover:bg-green-800 text-white py-3 rounded-xl font-semibold transition disabled:opacity-60"
+              className="w-full bg-green-700 hover:bg-green-800 text-white py-2.5 lg:py-3 rounded-xl font-semibold text-sm transition disabled:opacity-60"
             >
               {loading ? "Signing In..." : "Sign In"}
             </button>
 
           </form>
 
-          <p className="text-center text-xs text-gray-400 mt-8">
-            © 2026 VSA Slot Booking System. All rights reserved.
+          <p className="text-center text-[10px] lg:text-xs text-gray-400 mt-5">
+            © 2026 VSA Slot Booking System
           </p>
 
         </div>

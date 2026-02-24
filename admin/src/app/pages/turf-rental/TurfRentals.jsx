@@ -1445,6 +1445,7 @@ export default function TurfRentals() {
                                         <SelectItem value="upi" className={selectItemClass}>
                                             UPI
                                         </SelectItem>
+                                        <SelectItem value="razorpay" className={selectItemClass}>Razorpay</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>

@@ -13,7 +13,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { getMaharashtraCities } from "@/lib/location";
 import { useNavigate } from "react-router-dom";
 /* ================= CONSTANTS ================= */
-const PAYMENT_MODES = ["cash", "upi"];
+const PAYMENT_MODES = ["cash", "upi", "razorpay"];
 const PAYMENT_STATUS = ["paid", "pending"];
 /* ================= UTIL ================= */
 const addMonths = (dateStr, months) => {
@@ -36,6 +36,7 @@ export default function CoachingEnrollment() {
   const [discountCodeInput, setDiscountCodeInput] = useState("");
   const [appliedDiscounts, setAppliedDiscounts] = useState([]);
   const [discountsList, setDiscountsList] = useState([]);
+  const [selectedDiscountCode, setSelectedDiscountCode] = useState("none");
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const [tempFilters, setTempFilters] = useState(filters);
 
@@ -103,7 +104,17 @@ export default function CoachingEnrollment() {
     }
   };
   useEffect(() => {
-    fetchAll();
+    if (!drawer) {
+      fetchAll();
+    }
+  }, [drawer]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchAll();
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const recalculateAmounts = (discounts) => {
@@ -126,6 +137,44 @@ export default function CoachingEnrollment() {
       finalAmount: final,
     }));
   };
+
+  useEffect(() => {
+    if (!form.baseAmount) return;
+
+    if (selectedDiscountCode === "none") {
+      setForm((prev) => ({
+        ...prev,
+        totalDiscountAmount: 0,
+        finalAmount: prev.baseAmount,
+      }));
+      return;
+    }
+
+    const discount = discountsList.find(
+      (d) =>
+        d.code === selectedDiscountCode &&
+        d.isActive &&
+        d.applicableFor === "enrollment"
+    );
+
+    if (!discount) return;
+
+    let discountValue = 0;
+
+    if (discount.type === "percentage") {
+      discountValue = (form.baseAmount * discount.value) / 100;
+    } else {
+      discountValue = discount.value;
+    }
+
+    const final = Math.max(0, form.baseAmount - discountValue);
+
+    setForm((prev) => ({
+      ...prev,
+      totalDiscountAmount: Math.round(discountValue),
+      finalAmount: Math.round(final),
+    }));
+  }, [selectedDiscountCode, form.baseAmount, discountsList]);
 
   useEffect(() => {
     if (["cash", "upi"].includes(form.paymentMode)) {
@@ -1000,88 +1049,59 @@ export default function CoachingEnrollment() {
                 <label className="text-sm font-medium">Total Amount</label>
                 <Input disabled value={`₹ ${form.finalAmount || 0}`} />
               </div>
-              {/* ================= DISCOUNT SECTION ================= */}
-              <div className="col-span-2 space-y-3 mt-4">
+              {/* ================= DISCOUNT ================= */}
+              <div className="col-span-2 space-y-3 mt-4 border-t pt-4">
+                <label className="text-sm font-medium">Apply Discount</label>
 
-                <label className="text-sm font-medium">Discount Code</label>
+                <Select
+                  disabled={drawer === "view"}
+                  value={selectedDiscountCode}
+                  onValueChange={(value) => setSelectedDiscountCode(value)}
+                >
+                  <SelectTrigger className={selectTriggerClass}>
+                    <SelectValue placeholder="Select Discount (optional)" />
+                  </SelectTrigger>
 
-                {/* Apply Input (Hide in View Mode) */}
-                {drawer !== "view" && (
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Enter discount code"
-                      value={discountCodeInput}
-                      onChange={(e) =>
-                        setDiscountCodeInput(e.target.value.toUpperCase())
-                      }
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={applyDiscountCode}
-                    >
-                      Apply
-                    </Button>
-                  </div>
-                )}
+                  <SelectContent className="z-[9999] bg-white border shadow-lg">
+                    <SelectItem value="none" className={selectItemClass}>
+                      No Discount
+                    </SelectItem>
 
-                {/* Applied Discounts */}
-                {appliedDiscounts.length > 0 && (
-                  <div className="space-y-2 mt-3">
-
-                    {appliedDiscounts.map((d, index) => {
-
-                      const discountValue =
-                        d.type === "percentage"
-                          ? `${d.value}%`
-                          : `₹${d.value}`;
-
-                      return (
-                        <div
-                          key={index}
-                          className="flex justify-between items-center bg-green-50 border border-green-200 px-3 py-2 rounded-lg"
+                    {discountsList
+                      .filter((d) => d.isActive && d.applicableFor === "enrollment")
+                      .map((d) => (
+                        <SelectItem
+                          key={d._id}
+                          value={d.code}
+                          className={selectItemClass}
                         >
-                          <div className="text-sm font-medium text-green-800">
-                            {d.title || "Discount"}{" "}
-                            {d.code ? `(${d.code})` : ""}{" "}
-                            ({discountValue})
-                          </div>
+                          {d.code || d.title} —{" "}
+                          {d.type === "percentage"
+                            ? `${d.value}%`
+                            : `₹${d.value}`}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
 
-                          {drawer !== "view" && (
-                            <button
-                              type="button"
-                              onClick={() => removeDiscount(d.code)}
-                              className="text-red-600 text-xs font-semibold hover:underline"
-                            >
-                              Remove
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
+                {/* ================= AMOUNT BREAKDOWN ================= */}
+                <div className="bg-gray-50 border rounded-lg p-3 text-sm space-y-2 mt-3">
 
-                    {/* Breakdown */}
-                    <div className="bg-gray-50 border rounded-lg p-3 text-sm space-y-2 mt-3">
-
-                      <div className="flex justify-between">
-                        <span>Base Amount</span>
-                        <span>₹ {form.baseAmount}</span>
-                      </div>
-
-                      <div className="flex justify-between text-red-600">
-                        <span>Total Discount</span>
-                        <span>- ₹ {form.totalDiscountAmount || 0}</span>
-                      </div>
-
-                      <div className="flex justify-between font-semibold text-green-700 pt-2 border-t">
-                        <span>Final Amount</span>
-                        <span>₹ {form.finalAmount}</span>
-                      </div>
-
-                    </div>
-
+                  <div className="flex justify-between">
+                    <span>Base Amount</span>
+                    <span>₹ {form.baseAmount || 0}</span>
                   </div>
-                )}
+
+                  <div className="flex justify-between text-red-600">
+                    <span>Discount</span>
+                    <span>- ₹ {form.totalDiscountAmount || 0}</span>
+                  </div>
+
+                  <div className="flex justify-between font-semibold text-green-700 pt-2 border-t">
+                    <span>Final Amount</span>
+                    <span>₹ {form.finalAmount || 0}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

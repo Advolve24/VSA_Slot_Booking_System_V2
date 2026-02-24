@@ -175,11 +175,10 @@ export default function SlotAllocation() {
                         slots.map((s) => (
                           <span
                             key={s._id}
-                            className={`text-[11px] px-2 py-[2px] rounded-full border whitespace-nowrap ${
-                              s.isActive
+                            className={`text-[11px] px-2 py-[2px] rounded-full border whitespace-nowrap ${s.isActive
                                 ? "bg-green-50 text-green-700 border-green-300"
                                 : "bg-gray-100 text-gray-500 border-gray-300"
-                            }`}
+                              }`}
                           >
                             {s.label}
                           </span>
@@ -252,11 +251,10 @@ export default function SlotAllocation() {
                   slots.map((s) => (
                     <span
                       key={s._id}
-                      className={`text-[11px] px-2 py-[3px] rounded-full border whitespace-nowrap ${
-                        s.isActive
+                      className={`text-[11px] px-2 py-[3px] rounded-full border whitespace-nowrap ${s.isActive
                           ? "bg-green-50 text-green-700 border-green-300"
                           : "bg-gray-100 text-gray-500 border-gray-300"
-                      }`}
+                        }`}
                     >
                       {s.label}
                     </span>
@@ -279,7 +277,7 @@ export default function SlotAllocation() {
           className={
             isMobile
               ? "h-[80vh] rounded-t-2xl flex flex-col pt-4 pb-2"
-              : "w-[460px] h-screen flex flex-col"
+              : "w-[480px] h-screen flex flex-col"
           }
         >
           {/* FIXED HEADER */}
@@ -338,16 +336,17 @@ export default function SlotAllocation() {
                     }
                   />
 
-                  <div className={isMobile ? "col-span-2 flex gap-2" : ""}>
+                  <div className="col-span-2 md:col-span-1 flex flex-col md:flex-row gap-2 items-stretch md:items-center">
                     <Select
                       value={slot.isActive ? "active" : "disabled"}
                       onValueChange={(v) =>
                         updateSlotRow(i, "isActive", v === "active")
                       }
                     >
-                      <SelectTrigger className="h-10 w-full">
+                      <SelectTrigger className="h-10 w-full md:flex-1">
                         <SelectValue />
                       </SelectTrigger>
+
                       <SelectContent className="z-[9999] bg-white border shadow-lg">
                         <SelectItem value="active">Active</SelectItem>
                         <SelectItem value="disabled">Disabled</SelectItem>
@@ -356,7 +355,7 @@ export default function SlotAllocation() {
 
                     <button
                       onClick={() => removeSlotRow(i)}
-                      className="text-red-500 w-10 h-10 flex items-center justify-center border rounded-md hover:bg-red-50"
+                      className="text-red-500 w-full md:w-10 h-10 flex items-center justify-center border rounded-md hover:bg-red-50 shrink-0 transition"
                       aria-label="Remove slot"
                     >
                       <X size={16} />

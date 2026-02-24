@@ -83,7 +83,7 @@ export default function ReportsPage() {
         <h3 className="font-semibold mb-4">Quick Stats</h3>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <StatCard label="Total Students" value={data.quickStats.totalStudents} />
+          <StatCard label="Total Enrollments" value={data.quickStats.totalStudents} />
           <StatCard label="Turf Rentals" value={data.quickStats.totalTurfRentals} />
           <StatCard label="Active Batches" value={data.quickStats.activeBatches} />
         </div>
