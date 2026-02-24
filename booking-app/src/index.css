@@ -116,7 +116,7 @@ body {
 /* Make single month wider */
 .calendar-popover .rdp-month {
   width: 100%;
-  min-width: 320px;   /* adjust if needed */
+  min-width: 220px;   /* adjust if needed */
 }
 
 /* Ensure table spans full width */

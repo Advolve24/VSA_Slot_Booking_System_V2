@@ -965,226 +965,36 @@ export default function EnrollCoaching() {
       )}
       {/* ================= FORM + SUMMARY ================= */}
       {selectedBatch && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* ===== LEFT : SUMMARY CARD ===== */}
-          {/* ===== LEFT : STICKY PAYMENT SUMMARY ===== */}
-          <div className="lg:col-span-1">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
 
-            <div className="lg:sticky lg:top-24">
+          {/* ================= LEFT : FORM ================= */}
+          <div className="lg:col-span-2 bg-white border rounded-2xl shadow-sm p-4 sm:p-8 space-y-2">
 
-              <div className="bg-white rounded-2xl shadow-md border p-6 space-y-6">
+            {/* HEADER ROW */}
+            <div className="flex items-center justify-between">
 
-                {/* ================= HEADER ================= */}
-                <h2 className="text-xl font-semibold text-gray-800">
-                  Payment Summary
-                </h2>
+              {/* LEFT : TITLE */}
+              <h2 className="text-lg sm:text-2xl font-semibold text-gray-900">
+                Player Details
+              </h2>
 
-                {/* ================= BASIC DETAILS ================= */}
-                <div className="space-y-3 text-sm">
-
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Sport</span>
-                    <span className="font-medium text-gray-800">
-                      {selectedSport.name}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Batch</span>
-                    <span className="font-medium text-gray-800">
-                      {selectedBatch.name}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Plan</span>
-                    <span className="font-medium text-gray-800 capitalize">
-                      {selectedBatch.selectedPlan}
-                    </span>
-                  </div>
-
-                </div>
-
-                <hr />
-
-                {/* ================= PRICE BREAKDOWN ================= */}
-                <div className="space-y-3 text-sm">
-
-                  {/* BASE PRICE */}
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">
-                      {selectedBatch.selectedPlan === "monthly"
-                        ? "Monthly Fee"
-                        : "Quarterly Fee"}
-                    </span>
-                    <span className="font-medium text-gray-800">
-                      ₹ {priceDetails?.basePrice?.toLocaleString()}
-                    </span>
-                  </div>
-
-                  {/* DISCOUNTS */}
-                  {priceDetails?.discounts?.length > 0 &&
-                    priceDetails.discounts.map((d, i) => {
-
-                      const before = calculateStackedDiscount(
-                        priceDetails.basePrice,
-                        priceDetails.discounts.slice(0, i)
-                      );
-
-                      const after = calculateStackedDiscount(
-                        priceDetails.basePrice,
-                        priceDetails.discounts.slice(0, i + 1)
-                      );
-
-                      const discountValue = before - after;
-
-                      return (
-                        <div
-                          key={i}
-                          className="flex justify-between text-green-600"
-                        >
-                          <span>
-                            {d.code || "Offer"}{" "}
-                            {d.type === "percentage"
-                              ? `(${d.value}%)`
-                              : `(₹${d.value})`}
-                          </span>
-
-                          <span>
-                            - ₹ {discountValue.toLocaleString()}
-                          </span>
-                        </div>
-                      );
-                    })}
-
-                  <hr />
-
-                  {/* TOTAL */}
-                  <div className="flex justify-between text-lg font-semibold">
-                    <span>Total</span>
-                    <span className="text-green-700">
-                      ₹ {priceDetails?.finalPrice?.toLocaleString()}
-                    </span>
-                  </div>
-
-                </div>
-
-              </div>
+              {/* RIGHT : BACK BUTTON */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedBatch(null)}
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
 
             </div>
-          </div>
-
-
-          {/* ===== RIGHT : FORM ===== */}
-          <div className="lg:col-span-2 bg-white border rounded-2xl p-6 space-y-6">
-
-            {/* ================= BACK BUTTON ================= */}
-            <Button
-              variant="outline"
-              className="w-fit"
-              onClick={() => setSelectedBatch(null)}
-            >
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Back
-            </Button>
-
-            {/* ================= TITLE ================= */}
-            <h2 className="font-semibold text-green-700 text-lg">
-              Player Details
-            </h2>
-
-            {/* ================= SELECTED PLAN INFO ================= */}
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-
-              {/* LEFT SIDE */}
-              <div>
-                <p className="font-medium text-green-800">
-                  {selectedBatch.name}
-                </p>
-                <p className="text-green-700 capitalize">
-                  {selectedBatch.selectedPlan} Plan
-                </p>
-              </div>
-
-              {/* RIGHT SIDE - PRICE STYLE */}
-              <div className="flex items-center gap-3 flex-wrap">
-
-                {/* Original Price */}
-                {priceDetails?.totalDiscount > 0 && (
-                  <span className="text-gray-400 line-through text-sm">
-                    ₹{priceDetails.basePrice?.toLocaleString()}
-                  </span>
-                )}
-
-                {/* Final Price */}
-                <span className="text-orange-600 font-bold text-xl">
-                  ₹{priceDetails?.finalPrice?.toLocaleString()}
-                </span>
-
-                {/* Discount Badge */}
-                {priceDetails?.totalDiscount > 0 && (
-                  <span className="bg-green-200 text-green-800 text-xs px-3 py-1 rounded-full font-medium">
-                    {Math.round(
-                      (priceDetails.totalDiscount /
-                        priceDetails.basePrice) *
-                      100
-                    )}
-                    % OFF
-                  </span>
-                )}
-
-              </div>
-            </div>
-            {/* ================= COUPON SECTION ================= */}
-            <div className="space-y-3">
-              <Label>Have a Coupon?</Label>
-
-              <div className="flex gap-3">
-                <Input
-                  placeholder="Enter coupon code"
-                  value={discountCodeInput}
-                  onChange={(e) =>
-                    setDiscountCodeInput(e.target.value.toUpperCase())
-                  }
-                />
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={applyDiscountCode}
-                >
-                  Apply
-                </Button>
-              </div>
-
-              {/* Applied Coupons */}
-              {appliedDiscounts.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {appliedDiscounts.map((d) => (
-                    <div
-                      key={d.code}
-                      className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs flex items-center gap-2"
-                    >
-                      {d.code}
-                      <button
-                        onClick={() => removeDiscount(d.code)}
-                        className="text-red-600 font-bold"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
 
             {/* ================= MOBILE + OTP ================= */}
             <div className="space-y-2">
               <Label>Mobile Number</Label>
 
               <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-
                 <div className="relative flex-1">
                   <Input
                     placeholder="Enter 10 digit mobile number"
@@ -1197,7 +1007,6 @@ export default function EnrollCoaching() {
                       })
                     }
                   />
-
                   {phoneVerified && (
                     <CheckCircle2 className="absolute right-3 top-3 h-5 w-5 text-green-600" />
                   )}
@@ -1225,28 +1034,9 @@ export default function EnrollCoaching() {
                         setOtp(e.target.value.replace(/\D/g, ""))
                       }
                     />
-
-                    {verifyingOtp && (
-                      <span className="text-sm text-gray-500">
-                        Verifying...
-                      </span>
-                    )}
-
-                    {timer > 0 && (
-                      <span className="text-xs text-gray-500">
-                        00:{String(timer).padStart(2, "0")}
-                      </span>
-                    )}
-
-                    {timer === 0 && (
-                      <button
-                        type="button"
-                        onClick={handleSendOtp}
-                        className="text-xs text-orange-600 underline"
-                      >
-                        Resend
-                      </button>
-                    )}
+                    <Button onClick={verifyOtp}>
+                      Verify OTP
+                    </Button>
                   </>
                 )}
               </div>
@@ -1254,7 +1044,7 @@ export default function EnrollCoaching() {
 
             {/* ================= OTHER FIELDS ================= */}
             <div
-              className={`grid sm:grid-cols-2 gap-4 transition-opacity ${!phoneVerified ? "opacity-50 pointer-events-none" : ""
+              className={`grid sm:grid-cols-2 gap-2 sm:gap-6 transition-opacity ${!phoneVerified ? "opacity-50 pointer-events-none" : ""
                 }`}
             >
               <div className="space-y-1">
@@ -1300,8 +1090,8 @@ export default function EnrollCoaching() {
                     setForm({ ...form, city: value })
                   }
                 >
-                  <SelectTrigger className="h-10">
-                    <SelectValue placeholder="Select City (Maharashtra)" />
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select City" />
                   </SelectTrigger>
                   <SelectContent className="max-h-60">
                     {cities.map((c) => (
@@ -1324,35 +1114,126 @@ export default function EnrollCoaching() {
                 />
               </div>
             </div>
-
-            {/* ================= PAYMENT SUMMARY ================= */}
-            <div className="border-t pt-4 flex justify-between items-center text-lg font-semibold text-green-800">
-              <span>Total Payable</span>
-              <span>
-                ₹ {priceDetails?.finalPrice?.toLocaleString()}
-              </span>
-            </div>
-
-            {/* ================= ACTION BUTTONS ================= */}
-            <div className="flex flex-col sm:flex-row gap-4 pt-4">
-              <Button
-                variant="outline"
-                className="w-full sm:w-1/2 py-6"
-                onClick={() => navigate("/", { replace: true })}
-              >
-                Cancel
-              </Button>
-
-              <Button
-                disabled={!phoneVerified || submitting}
-                className="w-full sm:w-1/2 py-6 bg-orange-500 hover:bg-orange-600"
-                onClick={submitEnrollment}
-              >
-                {submitting ? "Processing..." : "Proceed to Payment"}
-              </Button>
-            </div>
-
           </div>
+
+          {/* ================= RIGHT : PAYMENT SUMMARY ================= */}
+          <div className="lg:col-span-1">
+            <div className="lg:sticky lg:top-24">
+
+              <div className="bg-white rounded-2xl shadow-md border p-6 space-y-6">
+
+                <h2 className="text-lg sm:text-xl font-semibold">
+                  Payment Summary
+                </h2>
+
+                <div className="space-y-4 text-sm">
+
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Sport</span>
+                    <span className="font-medium">
+                      {selectedSport.name}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Batch</span>
+                    <span className="font-medium">
+                      {selectedBatch.name}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Plan</span>
+                    <span className="capitalize font-medium">
+                      {selectedBatch.selectedPlan}
+                    </span>
+                  </div>
+
+                  <hr />
+
+                  <div className="flex justify-between">
+                    <span>
+                      {selectedBatch.selectedPlan === "monthly"
+                        ? "Monthly Fee"
+                        : "Quarterly Fee"}
+                    </span>
+                    <span>
+                      ₹ {priceDetails?.basePrice?.toLocaleString()}
+                    </span>
+                  </div>
+
+                  {priceDetails?.totalDiscount > 0 && (
+                    <div className="flex justify-between text-green-600">
+                      <span>Discount</span>
+                      <span>
+                        - ₹ {priceDetails?.totalDiscount?.toLocaleString()}
+                      </span>
+                    </div>
+                  )}
+
+                  <hr />
+
+                  <div className="flex justify-between text-base sm:text-lg font-semibold">
+                    <span>Total</span>
+                    <span className="text-green-700">
+                      ₹ {priceDetails?.finalPrice?.toLocaleString()}
+                    </span>
+                  </div>
+
+                  {/* COUPON */}
+                  <div className="pt-4 space-y-3">
+                    <Label>Have a Coupon?</Label>
+
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Enter coupon code"
+                        value={discountCodeInput}
+                        onChange={(e) =>
+                          setDiscountCodeInput(e.target.value.toUpperCase())
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={applyDiscountCode}
+                      >
+                        Apply
+                      </Button>
+                    </div>
+
+                    {appliedDiscounts.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {appliedDiscounts.map((d) => (
+                          <div
+                            key={d.code}
+                            className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs flex items-center gap-2"
+                          >
+                            {d.code}
+                            <button
+                              onClick={() => removeDiscount(d.code)}
+                              className="text-red-600 font-bold"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <Button
+                    disabled={!phoneVerified || submitting}
+                    className="w-full py-4 bg-green-700 hover:bg-green-800 text-white font-semibold"
+                    onClick={submitEnrollment}
+                  >
+                    Proceed to Pay
+                  </Button>
+
+                </div>
+              </div>
+            </div>
+          </div>
+
         </div>
       )}
     </div>

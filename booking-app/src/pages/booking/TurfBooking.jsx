@@ -50,11 +50,10 @@ const Stepper = ({ active }) => {
                       rounded-full flex items-center justify-center
                       text-white text-sm font-semibold
                       transition-all duration-300
-                      ${
-                        isCompleted
+                      ${isCompleted
+                        ? "bg-green-800"
+                        : isActive
                           ? "bg-green-700"
-                          : isActive
-                          ? "bg-green-600"
                           : "bg-gray-300 text-gray-500"
                       }
                     `}
@@ -65,10 +64,9 @@ const Stepper = ({ active }) => {
                   <span
                     className={`
                       text-[11px] sm:text-sm font-medium whitespace-nowrap
-                      ${
-                        isCompleted || isActive
-                          ? "text-green-700"
-                          : "text-gray-400"
+                      ${isCompleted || isActive
+                        ? "text-green-700"
+                        : "text-gray-400"
                       }
                     `}
                   >
@@ -81,10 +79,9 @@ const Stepper = ({ active }) => {
                   <div
                     className={`
                       flex-1 h-[2px] mx-2 sm:mx-4 transition-all duration-300
-                      ${
-                        active > step
-                          ? "bg-green-700"
-                          : "bg-gray-300"
+                      ${active > step
+                        ? "bg-green-700"
+                        : "bg-gray-300"
                       }
                     `}
                   />
@@ -309,30 +306,17 @@ export default function TurfBooking() {
               Select Date
             </h2>
 
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  disabled={!facility}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {date
-                    ? format(date, "dd MMM yyyy")
-                    : "Pick a date"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent>
-                <Calendar
-                  mode="single"
-                  selected={date}
-                  onSelect={setDate}
-                  disabled={(d) =>
-                    isBefore(d, startOfDay(new Date()))
-                  }
-                />
-              </PopoverContent>
-            </Popover>
+            <div className="bg-white border rounded-xl p-4 shadow-sm">
+              <Calendar
+                mode="single"
+                selected={date}
+                onSelect={setDate}
+                disabled={(d) =>
+                  isBefore(d, startOfDay(new Date()))
+                }
+                className="w-full"
+              />
+            </div>
           </div>
         </div>
       )}
@@ -356,7 +340,7 @@ export default function TurfBooking() {
                     ? "bg-green-700 text-white"
                     : "bg-white border-gray-300 hover:border-green-600",
                   slot.status !== "available" &&
-                    "opacity-40 cursor-not-allowed"
+                  "opacity-40 cursor-not-allowed"
                 )}
               >
                 {slot.label}

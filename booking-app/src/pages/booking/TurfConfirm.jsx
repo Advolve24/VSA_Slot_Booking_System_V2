@@ -45,6 +45,7 @@ export default function TurfConfirm() {
   const [discountData, setDiscountData] = useState(null);
   const finalAmount = discountData?.finalAmount || baseAmount;
   const [processingPayment, setProcessingPayment] = useState(false);
+  const [isExistingUser, setIsExistingUser] = useState(false);
 
   const coverImage = sportImage
     ? `${ASSETS_BASE}${sportImage}`
@@ -125,13 +126,16 @@ export default function TurfConfirm() {
       );
 
       if (res.data.exists) {
+        // Existing user → login immediately
         const loginRes = await api.post(
           "/auth/player-login",
           { mobile: form.mobile }
         );
 
         const { token, user } = loginRes.data;
+
         setAuth({ token, user });
+        setIsExistingUser(true);
 
         setForm((prev) => ({
           ...prev,
@@ -140,9 +144,19 @@ export default function TurfConfirm() {
         }));
 
         toast({ title: "Welcome Back 👋" });
+
+        localStorage.removeItem("verifiedMobile");
       } else {
-        toast({ title: "Mobile verified ✅" });
+        // New user
+        localStorage.setItem("verifiedMobile", form.mobile);
+        setIsExistingUser(false);
+
+        toast({
+          title: "Mobile verified ✅",
+          description: "Please complete your details.",
+        });
       }
+
     } catch {
       toast({
         variant: "destructive",
@@ -242,6 +256,21 @@ export default function TurfConfirm() {
               paymentId,
             });
 
+            toast({ title: "Payment Successful 🎉" });
+
+            /* ================= AUTO LOGIN FOR NEW USER ================= */
+            if (!isExistingUser) {
+              const loginRes = await api.post("/auth/player-login", {
+                mobile: form.mobile,
+              });
+
+              if (loginRes.data) {
+                const { token, user } = loginRes.data;
+                setAuth({ token, user });
+                localStorage.removeItem("verifiedMobile");
+              }
+            }
+
             /* ================= REDIRECT ================= */
             navigate("/turf-success", {
               state: {
@@ -250,7 +279,6 @@ export default function TurfConfirm() {
               },
               replace: true,
             });
-
           } catch (err) {
             console.error("Verify error:", err);
 
@@ -397,59 +425,10 @@ export default function TurfConfirm() {
         </div>
       </div>
       {/* ================= MAIN GRID ================= */}
-      <div className="grid lg:grid-cols-2 gap-8">
+      <div className="grid lg:grid-cols-3 gap-8">
 
-        {/* ================= LEFT CARD ================= */}
-        <div className="bg-white rounded-2xl shadow border overflow-hidden">
-          <img
-            src={coverImage}
-            className="h-44 sm:h-74 w-full object-cover"
-            alt={sportName}
-          />
-
-          <div className="p-4 sm:p-6 space-y-4">
-
-            <h2 className="text-xl font-semibold">
-              {facilityName}
-            </h2>
-
-            <div className="text-gray-600 text-sm space-y-1">
-              <p>Sport: <b>{sportName}</b></p>
-              <p>Date: <b>{format(new Date(date), "dd MMM yyyy")}</b></p>
-            </div>
-
-            <div>
-              <p className="text-sm font-medium mb-1">
-                Booked Slots
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {slots.map((slot, i) => (
-                  <span
-                    key={i}
-                    className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-medium"
-                  >
-                    {slot.label || slot.time}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <hr />
-
-            <div className="flex justify-between text-gray-700">
-              <span>Base Amount</span>
-              <span>₹{baseAmount}</span>
-            </div>
-
-            <div className="flex justify-between text-green-700 text-lg font-semibold">
-              <span>Payable</span>
-              <span>₹{finalAmount}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* ================= RIGHT FORM ================= */}
-        <div className="bg-white rounded-2xl shadow border p-4 sm:p-8 space-y-6">
+        {/* ================= LEFT FORM ================= */}
+        <div className="lg:col-span-2 bg-white rounded-2xl shadow border p-4 sm:p-8 space-y-6">
 
           <h2 className="text-xl font-semibold">
             Player Details
@@ -532,33 +511,105 @@ export default function TurfConfirm() {
             />
           </div>
 
-          {/* COUPON */}
-          <div>
-            <Label>Apply Discount Code</Label>
-            <div className="flex gap-3 mt-2">
-              <Input
-                placeholder="Enter coupon code"
-                value={discountCode}
-                onChange={(e) =>
-                  setDiscountCode(e.target.value.toUpperCase())
-                }
-              />
-              <Button variant="outline" onClick={applyDiscountCode}>
-                Apply
-              </Button>
+        </div>
+
+        {/* ================= RIGHT PAYMENT SUMMARY ================= */}
+        <div className="lg:col-span-1">
+          <div className="bg-white rounded-2xl shadow border overflow-hidden sticky top-24">
+            <div className="p-6 space-y-5">
+
+              <h3 className="text-lg font-semibold">
+                Payment Summary
+              </h3>
+
+              <div className="space-y-3 text-sm text-gray-600">
+
+                <div className="flex justify-between">
+                  <span>Sport</span>
+                  <span className="font-medium text-gray-900">
+                    {sportName}
+                  </span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span>Facility</span>
+                  <span className="font-medium text-gray-900">
+                    {facilityName}
+                  </span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span>Date</span>
+                  <span className="font-medium text-gray-900">
+                    {format(new Date(date), "dd MMM yyyy")}
+                  </span>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium mb-1">
+                    Booked Slots
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {slots.map((slot, i) => (
+                      <span
+                        key={i}
+                        className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-medium"
+                      >
+                        {slot.label || slot.time}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <hr />
+
+                <div className="flex justify-between">
+                  <span>Base Price</span>
+                  <span>₹{baseAmount}</span>
+                </div>
+
+                {/* COUPON */}
+                <div>
+                  <Label>Coupon Code</Label>
+                  <div className="flex gap-2 mt-2">
+                    <Input
+                      placeholder="E.G. VSA10"
+                      value={discountCode}
+                      onChange={(e) =>
+                        setDiscountCode(e.target.value.toUpperCase())
+                      }
+                    />
+                    <Button variant="outline" onClick={applyDiscountCode}>
+                      Apply
+                    </Button>
+                  </div>
+                </div>
+
+                {baseAmount !== finalAmount && (
+                  <div className="flex justify-between text-green-600">
+                    <span>Discount</span>
+                    <span>- ₹{baseAmount - finalAmount}</span>
+                  </div>
+                )}
+
+                <div className="flex justify-between text-lg font-semibold text-gray-900 pt-3 border-t">
+                  <span>Total</span>
+                  <span>₹{finalAmount}</span>
+                </div>
+                {/* CONFIRM BUTTON */}
+                <Button
+                  className="w-full py-6 bg-green-600 hover:bg-green-700 text-lg font-semibold"
+                  disabled={!phoneVerified}
+                  onClick={handleSubmit}
+                >
+                  Proceed to Pay – ₹{finalAmount}
+                </Button>
+
+              </div>
             </div>
           </div>
-
-          {/* CONFIRM BUTTON */}
-          <Button
-            className="w-full py-6 bg-orange-500 hover:bg-orange-600 text-lg font-semibold"
-            disabled={!phoneVerified}
-            onClick={handleSubmit}
-          >
-            Confirm Booking – ₹{finalAmount}
-          </Button>
-
         </div>
+
       </div>
     </div>
   );
