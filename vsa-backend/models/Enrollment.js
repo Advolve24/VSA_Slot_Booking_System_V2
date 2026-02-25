@@ -136,4 +136,13 @@ const enrollmentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+/* ======================================================
+   🔒 CRITICAL UNIQUE INDEX (NO DUPLICATE ENROLLMENT)
+====================================================== */
+
+enrollmentSchema.index(
+  { userId: 1, batchId: 1 },
+  { unique: true }
+);
+
 module.exports = mongoose.model("Enrollment", enrollmentSchema);

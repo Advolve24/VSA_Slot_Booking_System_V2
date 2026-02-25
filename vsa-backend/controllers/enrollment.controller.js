@@ -53,6 +53,14 @@ const findOrCreatePlayerUser = async ({
   address,
   age,
 }) => {
+
+  const normalizedAddress = {
+    country: address?.country || "India",
+    state: address?.state || "Maharashtra",
+    city: address?.city || "",
+    localAddress: address?.localAddress || "",
+  };
+
   const query = { role: "player", $or: [] };
 
   if (mobile) query.$or.push({ mobile });
@@ -68,14 +76,23 @@ const findOrCreatePlayerUser = async ({
       age,
       role: "player",
       sportsPlayed: sportName ? [sportName] : [],
-      address: address || {
-        country: "India",
-        state: "Maharashtra",
-      },
+      address: normalizedAddress,
       memberSince: new Date(),
       source: "enrollment",
     });
   }
+
+  /* ================= UPDATE EXISTING USER ================= */
+
+  await User.findByIdAndUpdate(user._id, {
+    fullName: playerName,
+    email,
+    age,
+    address: normalizedAddress,   // 🔥 FULL ADDRESS SYNC
+    $addToSet: {
+      sportsPlayed: sportName,
+    },
+  });
 
   return user;
 };
@@ -91,7 +108,7 @@ exports.createEnrollment = async (req, res) => {
       age,
       mobile,
       email,
-      batchName,
+      batchId,
       startDate,
       planType = "monthly",
       paymentMode = "razorpay",
@@ -101,11 +118,11 @@ exports.createEnrollment = async (req, res) => {
       discounts = [],       // admin direct discounts
     } = req.body;
 
-    if (!playerName || !age || !mobile || !batchName || !startDate) {
+    if (!playerName || !age || !mobile || !batchId || !startDate) {
       return res.status(400).json({ message: "Missing fields" });
     }
 
-    const batch = await Batch.findOne({ name: batchName }).populate(
+    const batch = await Batch.findOne({ _id: batchId }).populate(
       "sportId",
       "name endDate"
     );
@@ -130,16 +147,27 @@ exports.createEnrollment = async (req, res) => {
       email,
       age,
       sportName: batch.sportId?.name,
-      address,
+      address: {
+        country: address?.country || "India",
+        state: address?.state || "Maharashtra",
+        city: address?.city || "",
+        localAddress: address?.localAddress || "",
+      },
     });
 
-    /* ================= REMOVE OLD UNPAID ================= */
+    /* ================= BLOCK DUPLICATE ENROLLMENT ================= */
 
-    await Enrollment.deleteMany({
+    const existingEnrollment = await Enrollment.findOne({
       userId: user._id,
       batchId: batch._id,
-      paymentStatus: { $in: ["unpaid", "failed"] },
     });
+
+    if (existingEnrollment) {
+      return res.status(400).json({
+        message:
+          "You are already enrolled in this batch.",
+      });
+    }
 
     /* ================= APPLY DISCOUNTS ================= */
 
@@ -291,7 +319,16 @@ exports.createEnrollment = async (req, res) => {
 
   } catch (err) {
     console.error("CREATE ENROLLMENT ERROR:", err);
-    res.status(500).json({ message: err.message });
+
+    if (err.code === 11000 || err.message.includes("duplicate key")) {
+      return res.status(400).json({
+        message: "This player is already enrolled in this batch.",
+      });
+    }
+
+    res.status(500).json({
+      message: "Something went wrong. Please try again.",
+    });
   }
 };
 
@@ -392,12 +429,8 @@ exports.getEnrollmentById = async (req, res) => {
   }
 };
 
-
 /* ======================================================
    UPDATE ENROLLMENT
-====================================================== */
-/* ======================================================
-   UPDATE ENROLLMENT (FULLY UPDATED WITH MULTI DISCOUNT)
 ====================================================== */
 
 exports.updateEnrollment = async (req, res) => {

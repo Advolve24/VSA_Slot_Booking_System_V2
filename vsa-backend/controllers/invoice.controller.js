@@ -77,6 +77,16 @@ const getEnrollmentInvoice = async (req, res) => {
       return res.status(404).json({ message: "Enrollment not found" });
     }
 
+    // 🔒 SECURITY CHECK
+    if (
+      String(enrollment.userId) !== String(req.user.id) &&
+      req.user.role !== "admin"
+    ) {
+      return res.status(403).json({
+        message: "You are not allowed to view this invoice",
+      });
+    }
+
     res.json({
       success: true,
       type: "enrollment",
@@ -99,6 +109,17 @@ const getTurfInvoice = async (req, res) => {
 
     if (!rental)
       return res.status(404).json({ message: "Turf booking not found" });
+
+     // 🔒 SECURITY CHECK
+    if (
+      String(rental.userId) !== String(req.user.id) &&
+      req.user.role !== "admin"
+    ) {
+      return res.status(403).json({
+        message: "You are not allowed to view this invoice",
+      });
+    }
+
 
     res.json({
       success: true,
@@ -440,6 +461,16 @@ const downloadEnrollmentInvoicePDF = async (req, res) => {
     if (!enrollment)
       return res.status(404).send("Enrollment not found");
 
+    /* ================= SECURITY CHECK ================= */
+    if (
+      String(enrollment.userId) !== String(req.user.id) &&
+      req.user.role !== "admin"
+    ) {
+      return res.status(403).json({
+        message: "You are not allowed to download this invoice",
+      });
+    }
+
     const invoiceNo = generateInvoiceNo(enrollment._id, "ENR");
 
     const discountRows = (enrollment.discounts || [])
@@ -508,6 +539,16 @@ const downloadTurfInvoicePDF = async (req, res) => {
 
     if (!rental)
       return res.status(404).send("Turf booking not found");
+
+    /* ================= SECURITY CHECK ================= */
+    if (
+      String(rental.userId) !== String(req.user.id) &&
+      req.user.role !== "admin"
+    ) {
+      return res.status(403).json({
+        message: "You are not allowed to download this invoice",
+      });
+    }
 
     const invoiceNo = generateInvoiceNo(rental._id, "TRF");
 

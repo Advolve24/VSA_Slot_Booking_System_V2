@@ -113,34 +113,57 @@ exports.verifyPayment = async (req, res) => {
       return res.status(404).json({ message: "Payment not found" });
     }
 
+    /* ======================================================
+       🔒 IDEMPOTENCY CHECK (CRITICAL)
+    ====================================================== */
+
     if (payment.status === "paid") {
       return res.json({ success: true });
     }
 
     /* ================= UPDATE PAYMENT ================= */
+
     payment.status = "paid";
     payment.razorpayPaymentId = razorpay_payment_id;
     payment.razorpaySignature = razorpay_signature;
     await payment.save();
 
     /* ======================================================
-       🔥 ENROLLMENT PAYMENT SUCCESS
+       🔥 ENROLLMENT PAYMENT SUCCESS (SAFE VERSION)
     ====================================================== */
+
     if (payment.purpose === "enrollment") {
+
       const enrollment = await Enrollment.findById(
         payment.enrollmentId
       ).populate("batchId");
 
-      if (enrollment && enrollment.paymentStatus !== "paid") {
+      if (!enrollment) {
+        return res.status(404).json({ message: "Enrollment not found" });
+      }
+
+      /* 🔒 IMPORTANT:
+         Only update if NOT already paid
+         Prevents duplicate seat increment
+      */
+
+      if (enrollment.paymentStatus !== "paid") {
 
         enrollment.paymentStatus = "paid";
         enrollment.paymentMode = "razorpay";
         enrollment.status = "active";
         await enrollment.save();
 
-        await Batch.findByIdAndUpdate(enrollment.batchId._id, {
-          $inc: { enrolledCount: 1 },
-        });
+        /* 🔒 SAFE SEAT INCREMENT */
+        await Batch.findOneAndUpdate(
+          {
+            _id: enrollment.batchId._id,
+            enrolledCount: { $lt: enrollment.batchId.capacity },
+          },
+          { $inc: { enrolledCount: 1 } }
+        );
+
+        /* ================= SLOT RESOLUTION ================= */
 
         let slotTime = "Not Assigned";
 
@@ -163,7 +186,7 @@ exports.verifyPayment = async (req, res) => {
           }
         }
 
-        /* 🔥 FIRE & FORGET EMAIL (NO AWAIT) */
+        /* 🔥 FIRE & FORGET EMAIL */
         if (enrollment.email) {
           sendEnrollmentMail({
             to: enrollment.email,
@@ -190,20 +213,26 @@ exports.verifyPayment = async (req, res) => {
     }
 
     /* ======================================================
-       🔥 TURF BOOKING PAYMENT SUCCESS
+        TURF BOOKING PAYMENT SUCCESS (SAFE VERSION)
     ====================================================== */
+
     if (payment.purpose === "turf") {
+
       const rental = await TurfRental.findById(
         payment.turfRentalId
       );
 
-      if (rental && rental.paymentStatus !== "paid") {
+      if (!rental) {
+        return res.status(404).json({ message: "Booking not found" });
+      }
+
+      if (rental.paymentStatus !== "paid") {
+
         rental.paymentStatus = "paid";
         rental.paymentMode = "razorpay";
         rental.bookingStatus = "confirmed";
         await rental.save();
 
-        /* 🔥 FIRE & FORGET EMAIL (NO AWAIT) */
         if (rental.email) {
           sendTurfBookingMail({
             to: rental.email,
@@ -223,7 +252,6 @@ exports.verifyPayment = async (req, res) => {
       }
     }
 
-    /* ================= RETURN IMMEDIATELY ================= */
     return res.json({ success: true });
 
   } catch (err) {

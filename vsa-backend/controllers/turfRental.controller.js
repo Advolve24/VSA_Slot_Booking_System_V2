@@ -22,6 +22,14 @@ const findOrCreateRentalUser = async ({
   email,
   address,
 }) => {
+
+  const normalizedAddress = {
+    country: address?.country || "India",
+    state: address?.state || "Maharashtra",
+    city: address?.city || "",
+    localAddress: address?.localAddress || "",
+  };
+
   let user = await User.findOne({
     mobile: phone,
     role: "player",
@@ -33,14 +41,19 @@ const findOrCreateRentalUser = async ({
       mobile: phone,
       email,
       role: "player",
-      address: address || {
-        country: "India",
-        state: "Maharashtra",
-      },
+      address: normalizedAddress,
       source: "turf",
       memberSince: new Date(),
     });
   }
+
+  /* ================= UPDATE EXISTING USER ================= */
+
+  await User.findByIdAndUpdate(user._id, {
+    fullName: userName,
+    email,
+    address: normalizedAddress,  // 🔥 FULL ADDRESS SYNC
+  });
 
   return user;
 };
@@ -141,7 +154,12 @@ exports.createTurfRental = async (req, res) => {
       userName,
       phone,
       email,
-      address,
+      address: {
+  country: address?.country || "India",
+  state: address?.state || "Maharashtra",
+  city: address?.city || "",
+  localAddress: address?.localAddress || "",
+},
     });
 
     /* ================= AMOUNT CALCULATION ================= */

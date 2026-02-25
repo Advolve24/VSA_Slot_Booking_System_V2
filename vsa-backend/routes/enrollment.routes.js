@@ -4,7 +4,7 @@ const role = require("../middleware/role");
 const ctrl = require("../controllers/enrollment.controller");
 
 /* ================= WEBSITE ================= */
-router.post("/website", ctrl.createEnrollment); // PUBLIC
+router.post("/website", ctrl.createEnrollment); 
 
 /* ================= ADMIN ================= */
 router.post("/", auth, role(["admin"]), ctrl.createEnrollment);
