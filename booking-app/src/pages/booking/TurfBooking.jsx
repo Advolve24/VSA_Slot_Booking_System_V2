@@ -1,18 +1,14 @@
 import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { format, isBefore, startOfDay } from "date-fns";
-import { Check, ArrowLeft, CalendarIcon } from "lucide-react";
+import { Check, ArrowLeft } from "lucide-react";
+import { useLocation } from "react-router-dom";
 
 import api from "@/lib/axios";
 import { cn } from "@/lib/utils";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 
 const ASSETS_BASE =
   import.meta.env.VITE_ASSETS_BASE_URL || "http://localhost:5000";
@@ -22,9 +18,9 @@ const ASSETS_BASE =
 const Stepper = ({ active }) => {
   const steps = [
     "Sport",
-    "Facility & Date",
-    "Time Slot",
-    "Review & Details",
+    "Facility",
+    "Date & Time",
+    "Review",
   ];
 
   return (
@@ -41,9 +37,7 @@ const Stepper = ({ active }) => {
             return (
               <div key={step} className="flex items-center flex-1">
 
-                {/* STEP */}
-                <div className="flex flex-col sm:flex-row items-center text-center sm:text-left gap-2 sm:gap-3">
-
+                <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3">
                   <div
                     className={`
                       w-8 h-8 md:w-9 md:h-9
@@ -74,11 +68,10 @@ const Stepper = ({ active }) => {
                   </span>
                 </div>
 
-                {/* CONNECTOR */}
                 {!isLast && (
                   <div
                     className={`
-                      flex-1 h-[2px] mx-2 sm:mx-4 transition-all duration-300
+                      flex-1 h-[1px] mx-2 sm:mx-4 transition-all duration-300
                       ${active > step
                         ? "bg-green-700"
                         : "bg-gray-300"
@@ -94,15 +87,18 @@ const Stepper = ({ active }) => {
     </div>
   );
 };
+
 /* ===================== MAIN COMPONENT ===================== */
 
 export default function TurfBooking() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   /* ================= DATA ================= */
   const [sports, setSports] = useState([]);
   const [facilities, setFacilities] = useState([]);
   const [slots, setSlots] = useState([]);
+  
 
   /* ================= SELECTION ================= */
   const [sport, setSport] = useState(null);
@@ -110,7 +106,7 @@ export default function TurfBooking() {
   const [date, setDate] = useState(null);
   const [selectedSlots, setSelectedSlots] = useState([]);
 
-  /* ================= LOAD INITIAL DATA ================= */
+  /* ================= LOAD DATA ================= */
   useEffect(() => {
     api.get("/sports").then((res) => setSports(res.data));
     api.get("/facilities").then((res) =>
@@ -118,7 +114,7 @@ export default function TurfBooking() {
     );
   }, []);
 
-  /* ================= FILTER FACILITY BY SPORT ================= */
+  /* ================= FILTER FACILITY ================= */
   const filteredFacilities = useMemo(() => {
     if (!sport) return [];
     return facilities.filter((f) =>
@@ -138,9 +134,8 @@ export default function TurfBooking() {
         )}`
       )
       .then((res) => {
-        setSlots(res.data || []);
-        setSelectedSlots([]);
-      });
+  setSlots(res.data || []);
+});
   }, [facility, date]);
 
   /* ================= SLOT TOGGLE ================= */
@@ -154,7 +149,34 @@ export default function TurfBooking() {
     );
   };
 
-  /* ================= BACK BUTTON LOGIC ================= */
+ useEffect(() => {
+  if (!location.state) return;
+
+  const { sportId, facilityId, date, slots: selectedFromConfirm } = location.state;
+
+  if (sportId && sports.length) {
+    const selectedSport = sports.find((s) => s._id === sportId);
+    if (selectedSport) setSport(selectedSport);
+  }
+
+  if (facilityId && facilities.length) {
+    const selectedFacility = facilities.find((f) => f._id === facilityId);
+    if (selectedFacility) setFacility(selectedFacility);
+  }
+
+  if (date) {
+    setDate(new Date(date));
+  }
+
+  // ✅ Restore selected slots
+  if (selectedFromConfirm?.length) {
+    setSelectedSlots(selectedFromConfirm.map((s) => s.time));
+  }
+
+}, [location.state, sports, facilities]);
+
+
+  /* ================= BACK BUTTON ================= */
   const handleBack = () => {
     if (selectedSlots.length > 0) {
       setSelectedSlots([]);
@@ -199,44 +221,38 @@ export default function TurfBooking() {
   /* ================= ACTIVE STEP ================= */
   const getActiveStep = () => {
     if (!sport) return 1;
-    if (!facility || !date) return 2;
-    if (!selectedSlots.length) return 3;
+    if (!facility) return 2;
+    if (!date || !selectedSlots.length) return 3;
     return 4;
   };
 
   const activeStep = getActiveStep();
 
   return (
-    <div className="max-w-5xl mx-auto py-6 px-4 space-y-4">
-
-      {/* ================= STEPPER ================= */}
-      <Stepper active={activeStep} />
-
-      {/* ================= BACK BUTTON ================= */}
-      {activeStep > 1 && (
-        <div>
-          <Button
-            variant="ghost"
-            onClick={handleBack}
-            className="flex items-center gap-2"
-          >
-            <ArrowLeft size={18} />
-            Back
-          </Button>
-        </div>
-      )}
-
-      {/* ================= TITLE ================= */}
-      <div className="text-center ">
-        <h1 className="text-2xl md:text-3xl font-bold text-green-800">
-          Book Your Session
+    <div className="max-w-5xl mx-auto py-0 sm:py-2 px-0 space-y-4">
+      <div>
+        <h1 className="text-2xl font-bold text-green-800">
+          Book Your Turf
         </h1>
-        <p className="text-gray-500 mt-2 text-sm md:text-base">
-          Select sport, facility, date and time slot
+        <p className="text-sm text-gray-600">
+          Choose the sport and facility that best fits your needs.
         </p>
       </div>
 
-      {/* ================= SPORT LIST ================= */}
+      <Stepper active={activeStep} />
+
+      {activeStep > 1 && (
+        <Button
+          variant="ghost"
+          onClick={handleBack}
+          className="flex items-center gap-2"
+        >
+          <ArrowLeft size={18} />
+          Back
+        </Button>
+      )}
+
+      {/* ================= STEP 1 ================= */}
       {!sport && (
         <div className="space-y-4">
           {sports.map((s) => (
@@ -269,44 +285,40 @@ export default function TurfBooking() {
         </div>
       )}
 
-      {/* ================= FACILITY + DATE ================= */}
-      {sport && !selectedSlots.length && (
-        <div className="grid md:grid-cols-2 gap-8">
+      {/* ================= STEP 2 ================= */}
+      {sport && !facility && (
+        <div className="space-y-4">
+          <h2 className="font-semibold text-lg">
+            Select Facility
+          </h2>
 
-          {/* FACILITIES */}
-          <div>
-            <h2 className="font-semibold mb-3">
-              Select Facility
-            </h2>
-
-            <div className="space-y-3">
-              {filteredFacilities.map((f) => (
-                <div
-                  key={f._id}
-                  onClick={() => setFacility(f)}
-                  className={cn(
-                    "p-4 rounded-xl border cursor-pointer transition",
-                    facility?._id === f._id
-                      ? "border-green-700 bg-green-50"
-                      : "hover:border-green-500"
-                  )}
-                >
-                  <h3 className="font-medium">{f.name}</h3>
-                  <p className="text-sm text-gray-500">
-                    ₹{f.hourlyRate}/hour
-                  </p>
-                </div>
-              ))}
+          {filteredFacilities.map((f) => (
+            <div
+              key={f._id}
+              onClick={() => setFacility(f)}
+              className="p-4 rounded-xl border hover:border-green-600 cursor-pointer transition"
+            >
+              <h3 className="font-medium">{f.name}</h3>
+              <p className="text-sm text-gray-500">
+                ₹{f.hourlyRate}/hour
+              </p>
             </div>
-          </div>
+          ))}
+        </div>
+      )}
 
-          {/* DATE */}
-          <div>
-            <h2 className="font-semibold mb-3">
-              Select Date
-            </h2>
+      {/* ================= STEP 3 ================= */}
+      {sport && facility && (
+        <div className="space-y-6">
 
-            <div className="bg-white border rounded-xl p-4 shadow-sm">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-8">
+
+            {/* ================= CALENDAR (40%) ================= */}
+            <div className="md:col-span-2 bg-white border rounded-2xl p-5 shadow-sm">
+              <h2 className="font-semibold mb-4 text-lg">
+                Select Date
+              </h2>
+
               <Calendar
                 mode="single"
                 selected={date}
@@ -317,41 +329,53 @@ export default function TurfBooking() {
                 className="w-full"
               />
             </div>
+
+            {/* ================= TIME SLOTS (60%) ================= */}
+            <div className="md:col-span-3 bg-white border rounded-2xl p-5 shadow-sm">
+
+              <h2 className="font-semibold mb-4 text-lg">
+                Pick Time Slot
+              </h2>
+
+              {!date && (
+                <p className="text-sm text-gray-400">
+                  Please select a date first
+                </p>
+              )}
+
+              {date && slots.length === 0 && (
+                <p className="text-sm text-gray-400">
+                  No slots available for this date
+                </p>
+              )}
+
+              {date && slots.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-3">
+                  {slots.map((slot) => (
+                    <button
+                      key={slot.time}
+                      disabled={slot.status !== "available"}
+                      onClick={() => toggleSlot(slot)}
+                      className={cn(
+                        "px-3 py-2 rounded-xl border text-sm font-medium transition-all",
+                        selectedSlots.includes(slot.time)
+                          ? "bg-green-700 text-white border-green-700"
+                          : "bg-white hover:border-green-600",
+                        slot.status !== "available" &&
+                        "opacity-40 cursor-not-allowed"
+                      )}
+                    >
+                      {slot.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
-
-      {/* ================= SLOTS ================= */}
-      {slots.length > 0 && (
-        <div>
-          <h2 className="font-semibold mb-4 text-center">
-            Pick a Time Slot
-          </h2>
-
-          <div className="grid grid-cols-2 md:flex md:flex-wrap md:justify-center gap-4">
-            {slots.map((slot) => (
-              <button
-                key={slot.time}
-                disabled={slot.status !== "available"}
-                onClick={() => toggleSlot(slot)}
-                className={cn(
-                  "px-1 sm:px-6 py-2 sm:py-3 rounded-xl border text-sm font-medium transition",
-                  selectedSlots.includes(slot.time)
-                    ? "bg-green-700 text-white"
-                    : "bg-white border-gray-300 hover:border-green-600",
-                  slot.status !== "available" &&
-                  "opacity-40 cursor-not-allowed"
-                )}
-              >
-                {slot.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ================= CONTINUE ================= */}
-      {selectedSlots.length > 0 && (
+      {/* ================= STEP 4 ================= */}
+      {date && selectedSlots.length > 0 && (
         <Button
           onClick={handleContinue}
           className="w-full bg-green-700 hover:bg-green-800 py-6 text-lg rounded-xl"

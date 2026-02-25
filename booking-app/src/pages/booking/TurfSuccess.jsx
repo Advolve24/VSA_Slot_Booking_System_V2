@@ -80,7 +80,7 @@ export default function TurfSuccess() {
             A confirmation has been sent to
           </p>
 
-          <p className="text-lg font-semibold text-gray-900">
+          <p className="text-sm sm:text-lg font-semibold text-gray-900">
             {email}
           </p>
 

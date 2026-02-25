@@ -35,7 +35,6 @@ export default function MyEnrollments() {
   const [selected, setSelected] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
 
-  /* ================= RESPONSIVE CHECK ================= */
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
     check();
@@ -43,7 +42,6 @@ export default function MyEnrollments() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
-  /* ================= FETCH ================= */
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -61,10 +59,49 @@ export default function MyEnrollments() {
     fetchData();
   }, []);
 
+  const downloadInvoice = async (id) => {
+  try {
+    // 🔄 Show loading toast
+    toast({
+      title: "Preparing invoice...",
+      description: "Please wait while we generate your PDF.",
+    });
+
+    const response = await api.get(
+      `/invoice/enrollment/${id}/download`,
+      { responseType: "blob" }
+    );
+
+    const url = window.URL.createObjectURL(
+      new Blob([response.data])
+    );
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `invoice-${id}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+
+    window.URL.revokeObjectURL(url);
+
+    // ✅ Success toast
+    toast({
+      title: "Invoice downloaded",
+      description: "Your invoice has been downloaded successfully.",
+    });
+
+  } catch (error) {
+    // ❌ Error toast
+    toast({
+      variant: "destructive",
+      title: "Download failed",
+      description: "Unable to download invoice. Please try again.",
+    });
+  }
+};
+
   const rows = useMemo(() => enrollments || [], [enrollments]);
-
   if (loading) return <div className="py-20 text-center">Loading...</div>;
-
   return (
     <>
       <div className="max-w-6xl mx-auto py-4 px-4">
@@ -132,14 +169,28 @@ export default function MyEnrollments() {
                           </td>
 
                           <td className="p-3 text-center">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setSelected(en)}
-                            >
-                              <Eye className="h-4 w-4 mr-1" />
-                              View
-                            </Button>
+                            <div className="flex items-center justify-center gap-2">
+
+                              {/* View Button */}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setSelected(en)}
+                              >
+                                <Eye className="h-4 w-4" />
+                                view
+                              </Button>
+
+                              {/* Download Invoice Button */}
+                              <Button
+                                size="sm"
+                                className="bg-green-700 hover:bg-green-800 text-white"
+                                onClick={() => downloadInvoice(en._id)}
+                              >
+                                Download
+                              </Button>
+
+                            </div>
                           </td>
                         </tr>
                       );
@@ -185,14 +236,30 @@ export default function MyEnrollments() {
                       )}
                     </div>
 
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="mt-3 w-full"
-                      onClick={() => setSelected(en)}
-                    >
-                      View Details
-                    </Button>
+                    {/* ================= INVOICE ACTIONS (MOBILE) ================= */}
+                    <div className="border-t pt-4 mt-4 flex gap-3">
+
+                      {/* View Details Button */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1 flex items-center justify-center"
+                        onClick={() => setSelected(en)}
+                      >
+                        <Eye className="h-4 w-4 mr-1" />
+                        View
+                      </Button>
+
+                      {/* Download Invoice Button */}
+                      <Button
+                        size="sm"
+                        className="flex-1 flex items-center justify-center bg-green-700 hover:bg-green-800 text-white"
+                        onClick={() => downloadInvoice(en._id)}
+                      >
+                        Download
+                      </Button>
+
+                    </div>
                   </div>
                 );
               })}

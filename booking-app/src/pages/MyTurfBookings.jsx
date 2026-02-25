@@ -35,6 +35,7 @@ export default function MyTurfBookings() {
   const [bookings, setBookings] = useState([]);
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [downloadingId, setDownloadingId] = useState(null);
 
   /* ================= RESPONSIVE CHECK ================= */
   useEffect(() => {
@@ -61,6 +62,47 @@ export default function MyTurfBookings() {
     };
     fetchData();
   }, []);
+
+  const downloadInvoice = async (id) => {
+    try {
+      setDownloadingId(id);
+
+      toast({
+        title: "Preparing invoice...",
+        description: "Generating your PDF. Please wait.",
+      });
+
+      const response = await api.get(
+        `/invoice/turf/${id}/download`,
+        { responseType: "blob" }
+      );
+
+      const url = window.URL.createObjectURL(
+        new Blob([response.data])
+      );
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `turf-invoice-${id}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "Invoice downloaded successfully",
+      });
+
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "Download failed",
+        description: "Unable to download invoice.",
+      });
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   if (loading)
     return <div className="py-16 text-center">Loading...</div>;
@@ -99,8 +141,8 @@ export default function MyTurfBookings() {
                         item.bookingStatus === "confirmed"
                           ? "bg-green-100 text-green-700"
                           : item.bookingStatus === "cancelled"
-                          ? "bg-red-100 text-red-700"
-                          : "bg-yellow-100 text-yellow-700";
+                            ? "bg-red-100 text-red-700"
+                            : "bg-yellow-100 text-yellow-700";
 
                       return (
                         <tr
@@ -130,16 +172,27 @@ export default function MyTurfBookings() {
                           </td>
 
                           <td className="p-3 text-center">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                setSelectedBooking(item)
-                              }
-                            >
-                              <Eye className="h-4 w-4 mr-1" />
-                              View
-                            </Button>
+                            <div className="flex items-center justify-center gap-2">
+
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setSelectedBooking(item)}
+                              >
+                                <Eye className="h-4 w-4" />
+                                View
+                              </Button>
+
+                              <Button
+                                size="sm"
+                                disabled={downloadingId === item._id}
+                                className="bg-green-700 hover:bg-green-800 text-white"
+                                onClick={() => downloadInvoice(item._id)}
+                              >
+                                {downloadingId === item._id ? "Downloading..." : "Download"}
+                              </Button>
+
+                            </div>
                           </td>
                         </tr>
                       );
@@ -156,8 +209,8 @@ export default function MyTurfBookings() {
                   item.bookingStatus === "confirmed"
                     ? "bg-green-100 text-green-700"
                     : item.bookingStatus === "cancelled"
-                    ? "bg-red-100 text-red-700"
-                    : "bg-yellow-100 text-yellow-700";
+                      ? "bg-red-100 text-red-700"
+                      : "bg-yellow-100 text-yellow-700";
 
                 return (
                   <div
@@ -190,16 +243,30 @@ export default function MyTurfBookings() {
                       </span>
                     </div>
 
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="mt-3 w-full"
-                      onClick={() =>
-                        setSelectedBooking(item)
-                      }
-                    >
-                      View Details
-                    </Button>
+                    <div className="mt-3 flex gap-2">
+
+                      {/* View Button */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1 flex items-center justify-center"
+                        onClick={() => setSelectedBooking(item)}
+                      >
+                        <Eye className="h-4 w-4 mr-1" />
+                        View
+                      </Button>
+
+                      {/* Download Button */}
+                      <Button
+                        size="sm"
+                        disabled={downloadingId === item._id}
+                        className="flex-1 flex items-center justify-center bg-green-700 hover:bg-green-800 text-white"
+                        onClick={() => downloadInvoice(item._id)}
+                      >
+                        {downloadingId === item._id ? "Downloading..." : "Download"}
+                      </Button>
+
+                    </div>
                   </div>
                 );
               })}

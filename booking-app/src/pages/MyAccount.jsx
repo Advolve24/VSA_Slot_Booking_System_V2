@@ -120,7 +120,7 @@ export default function MyAccount() {
   if (!user) return null;
 
   return (
-    <div className="max-w-4xl mx-auto py-8 px-4">
+    <div className="max-w-4xl mx-auto py-4 px-4">
 
       {/* TITLE */}
       <div className="text-center mb-6">
@@ -138,7 +138,7 @@ export default function MyAccount() {
         {/* HEADER */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full bg-green-700 text-white flex items-center justify-center text-lg font-semibold">
+            <div className="w-12 h-12 rounded-full bg-green-700 text-white flex items-center justify-center text-lg font-semibold">
               {form.fullName?.charAt(0)?.toUpperCase() || "U"}
             </div>
             <div>

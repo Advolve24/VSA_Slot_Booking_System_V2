@@ -391,44 +391,59 @@ export default function EnrollCoaching() {
 
       const enrollRes = await api.post("/enrollments/website", {
         source: "website",
-
         playerName: form.playerName.trim(),
         age: Number(form.age),
         mobile: form.mobile,
         email: form.email?.toLowerCase() || "",
-
         address: {
           country: COUNTRY_NAME,
           state: STATE_NAME,
           city: form.city,
           localAddress: form.localAddress,
         },
-
         batchId: selectedBatch._id,
         batchName: selectedBatch.name,
         planType: plan,
         startDate: new Date().toISOString().slice(0, 10),
-
-        // ✅ SEND ALL STACKED DISCOUNT CODES
         discountCodes:
           priceDetails?.discounts
             ?.map((d) => d.code)
             .filter(Boolean) || [],
-
         paymentMode: "razorpay",
       });
 
-      enrollment = enrollRes.data;
+      /* ================= HANDLE RETRY CASE ================= */
+
+      if (enrollRes.data.retry) {
+        enrollment = enrollRes.data.enrollment;
+
+        toast({
+          title: "Retrying payment",
+          description: "Your previous payment was incomplete. Please complete it now.",
+        });
+      } else {
+        enrollment = enrollRes.data;
+      }
 
     } catch (err) {
       setSubmitting(false);
 
+      let message =
+        err?.response?.data?.message || "";
+
+      // 🔒 Fallback if raw Mongo slips through
+      if (message.includes("duplicate key")) {
+        message = "You are already enrolled in this batch.";
+      }
+
       toast({
         variant: "destructive",
-        title: err?.response?.data?.message || "Enrollment failed",
+        title: "Enrollment Failed",
+        description:
+          message ||
+          "Something went wrong. Please try again.",
       });
-
-      return;
+        return;
     }
 
     /* ================= LOAD RAZORPAY ================= */
