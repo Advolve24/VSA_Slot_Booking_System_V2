@@ -23,6 +23,17 @@ const userSchema = new mongoose.Schema(
       max: 100,
     },
 
+    dateOfBirth: {
+      type: Date,
+      required: true,
+    },
+
+    gender: {
+      type: String,
+      enum: ["male", "female"],
+      required: true,
+    },
+
     /* ================= CONTACT ================= */
     mobile: {
       type: String,

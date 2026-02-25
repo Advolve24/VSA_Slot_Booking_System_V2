@@ -52,7 +52,12 @@ const findOrCreatePlayerUser = async ({
   sportName,
   address,
   age,
+  dateOfBirth,
+  gender,
 }) => {
+  if (!dateOfBirth || !gender) {
+    throw new Error("Date of Birth and Gender are required");
+  }
 
   const normalizedAddress = {
     country: address?.country || "India",
@@ -68,12 +73,16 @@ const findOrCreatePlayerUser = async ({
 
   let user = await User.findOne(query);
 
+  const dobDate = new Date(dateOfBirth);
+  
   if (!user) {
     return await User.create({
       fullName: playerName,
       mobile,
       email,
       age,
+     dateOfBirth: dobDate,
+      gender,
       role: "player",
       sportsPlayed: sportName ? [sportName] : [],
       address: normalizedAddress,
@@ -88,6 +97,8 @@ const findOrCreatePlayerUser = async ({
     fullName: playerName,
     email,
     age,
+    dateOfBirth: dobDate,
+    gender,
     address: normalizedAddress,   // 🔥 FULL ADDRESS SYNC
     $addToSet: {
       sportsPlayed: sportName,
@@ -108,6 +119,8 @@ exports.createEnrollment = async (req, res) => {
       age,
       mobile,
       email,
+      dateOfBirth,
+      gender,
       batchId,
       startDate,
       planType = "monthly",
@@ -118,8 +131,23 @@ exports.createEnrollment = async (req, res) => {
       discounts = [],       // admin direct discounts
     } = req.body;
 
-    if (!playerName || !age || !mobile || !batchId || !startDate) {
-      return res.status(400).json({ message: "Missing fields" });
+   if (
+      !playerName ||
+      !mobile ||
+      !dateOfBirth ||
+      !gender ||
+      !batchId ||
+      !startDate
+    ) {
+      return res.status(400).json({
+        message: "Complete player details required",
+      });
+    }
+
+    if (!["male", "female", "other"].includes(gender)) {
+      return res.status(400).json({
+        message: "Invalid gender value",
+      });
     }
 
     const batch = await Batch.findOne({ _id: batchId }).populate(
@@ -146,6 +174,8 @@ exports.createEnrollment = async (req, res) => {
       mobile,
       email,
       age,
+      dateOfBirth,
+      gender,
       sportName: batch.sportId?.name,
       address: {
         country: address?.country || "India",
@@ -293,6 +323,8 @@ exports.createEnrollment = async (req, res) => {
       userId: user._id,
       playerName,
       age,
+      dateOfBirth,
+      gender,
       mobile,
       email,
       address,
@@ -378,9 +410,6 @@ exports.getEnrollments = async (req, res) => {
 /* ======================================================
    GET SINGLE ENROLLMENT
 ====================================================== */
-/* ======================================================
-   GET SINGLE ENROLLMENT (UPDATED WITH DISCOUNT DETAILS)
-====================================================== */
 
 exports.getEnrollmentById = async (req, res) => {
   try {
@@ -432,7 +461,6 @@ exports.getEnrollmentById = async (req, res) => {
 /* ======================================================
    UPDATE ENROLLMENT
 ====================================================== */
-
 exports.updateEnrollment = async (req, res) => {
   try {
     const old = await Enrollment.findById(req.params.id);
@@ -440,49 +468,48 @@ exports.updateEnrollment = async (req, res) => {
 
     let batch = await Batch.findById(old.batchId);
 
+    const updateData = { ...req.body };
+
     /* ======================================================
        BATCH CHANGE
     ====================================================== */
     if (
-      req.body.batchId &&
-      req.body.batchId !== old.batchId.toString()
+      updateData.batchId &&
+      updateData.batchId !== old.batchId.toString()
     ) {
-      const newBatch = await Batch.findById(req.body.batchId);
+      const newBatch = await Batch.findById(updateData.batchId);
       if (!newBatch)
         return res.status(400).json({ message: "Invalid batch" });
 
-      // Decrease old batch count
       await Batch.findByIdAndUpdate(old.batchId, {
         $inc: { enrolledCount: -1 },
       });
 
-      // Increase new batch count
-      await Batch.findByIdAndUpdate(req.body.batchId, {
+      await Batch.findByIdAndUpdate(updateData.batchId, {
         $inc: { enrolledCount: 1 },
       });
 
       batch = newBatch;
 
-      req.body.batchName = newBatch.name;
-      req.body.coachName = newBatch.coachName;
-      req.body.sportName = newBatch.sportName;
+      updateData.batchName = newBatch.name;
+      updateData.coachName = newBatch.coachName;
+      updateData.sportName = newBatch.sportName;
     }
 
     /* ======================================================
        PLAN / DATE UPDATE
     ====================================================== */
 
-    const planType = req.body.planType || old.planType;
-    const startDate = req.body.startDate || old.startDate;
-
+    const planType = updateData.planType || old.planType;
+    const startDate = updateData.startDate || old.startDate;
     const months = planType === "quarterly" ? 3 : 1;
 
     const endDate = calculateEndDate(startDate, months);
 
-    req.body.planType = planType;
-    req.body.durationMonths = months;
-    req.body.startDate = startDate;
-    req.body.endDate = endDate;
+    updateData.planType = planType;
+    updateData.durationMonths = months;
+    updateData.startDate = startDate;
+    updateData.endDate = endDate;
 
     /* ======================================================
        RECALCULATE BASE AMOUNT
@@ -491,64 +518,96 @@ exports.updateEnrollment = async (req, res) => {
     const monthlyFee = batch?.monthlyFee || old.monthlyFee;
     const baseAmount = monthlyFee * months;
 
-    req.body.monthlyFee = monthlyFee;
-    req.body.baseAmount = baseAmount;
+    updateData.monthlyFee = monthlyFee;
+    updateData.baseAmount = baseAmount;
 
     /* ======================================================
        HANDLE MULTIPLE DISCOUNTS
     ====================================================== */
 
-    let discounts = req.body.discounts || old.discounts || [];
+    let discounts = updateData.discounts || old.discounts || [];
 
     let runningTotal = baseAmount;
     let totalDiscountAmount = 0;
 
     discounts.forEach((d) => {
-      if (d.type === "percentage") {
-        const discountValue = (runningTotal * d.value) / 100;
-        runningTotal -= discountValue;
-        totalDiscountAmount += discountValue;
-      } else {
-        runningTotal -= d.value;
-        totalDiscountAmount += d.value;
-      }
+      let discountValue =
+        d.type === "percentage"
+          ? (runningTotal * d.value) / 100
+          : d.value;
+
+      discountValue = Math.min(discountValue, runningTotal);
+
+      runningTotal -= discountValue;
+      totalDiscountAmount += discountValue;
     });
 
     runningTotal = Math.max(0, Math.round(runningTotal));
 
-    req.body.discounts = discounts;
-    req.body.totalDiscountAmount = Math.round(totalDiscountAmount);
-    req.body.finalAmount = runningTotal;
+    updateData.discounts = discounts;
+    updateData.totalDiscountAmount = Math.round(totalDiscountAmount);
+    updateData.finalAmount = runningTotal;
 
     /* ======================================================
        PAYMENT STATUS
     ====================================================== */
 
     const updatedPaymentStatus =
-      req.body.paymentStatus !== undefined
-        ? req.body.paymentStatus
+      updateData.paymentStatus !== undefined
+        ? updateData.paymentStatus
         : old.paymentStatus;
 
-    req.body.paymentStatus = updatedPaymentStatus;
+    updateData.paymentStatus = updatedPaymentStatus;
 
     /* ======================================================
        STATUS RECALCULATION
     ====================================================== */
 
-    req.body.status = calculateEnrollmentStatus(
+    updateData.status = calculateEnrollmentStatus(
       updatedPaymentStatus,
       endDate,
       batch?.endDate
     );
 
     /* ======================================================
-       SYNC USER ADDRESS
+       DOB + GENDER + AGE HANDLING
     ====================================================== */
 
-    if (req.body.address && old.userId) {
-      await User.findByIdAndUpdate(old.userId, {
-        address: req.body.address,
-      });
+    if (updateData.dateOfBirth) {
+      updateData.dateOfBirth = new Date(updateData.dateOfBirth);
+
+      // Auto calculate age
+      const diff = Date.now() - updateData.dateOfBirth.getTime();
+      const ageDt = new Date(diff);
+      updateData.age = Math.abs(ageDt.getUTCFullYear() - 1970);
+    }
+
+    if (updateData.gender) {
+      updateData.gender = updateData.gender;
+    }
+
+    /* ======================================================
+       SYNC USER DATA
+    ====================================================== */
+
+    if (old.userId) {
+      const userUpdate = {};
+
+      if (updateData.address)
+        userUpdate.address = updateData.address;
+
+      if (updateData.dateOfBirth)
+        userUpdate.dateOfBirth = updateData.dateOfBirth;
+
+      if (updateData.gender)
+        userUpdate.gender = updateData.gender;
+
+      if (updateData.age)
+        userUpdate.age = updateData.age;
+
+      if (Object.keys(userUpdate).length > 0) {
+        await User.findByIdAndUpdate(old.userId, userUpdate);
+      }
     }
 
     /* ======================================================
@@ -557,7 +616,7 @@ exports.updateEnrollment = async (req, res) => {
 
     const updated = await Enrollment.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      updateData,
       { new: true }
     );
 
@@ -568,7 +627,6 @@ exports.updateEnrollment = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-
 /* ======================================================
    DELETE ENROLLMENT
 ====================================================== */

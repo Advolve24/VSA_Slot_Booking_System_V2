@@ -21,6 +21,17 @@ const enrollmentSchema = new mongoose.Schema(
       required: true,
     },
 
+    dateOfBirth: {
+      type: Date,
+      required: true,
+    },
+
+    gender: {
+      type: String,
+      enum: ["male", "female"],
+      required: true,
+    },
+
     mobile: {
       type: String,
       required: true,
