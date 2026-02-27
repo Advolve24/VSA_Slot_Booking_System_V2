@@ -8,8 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { getCitiesByState } from "@/lib/location";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Clock, Calendar, Users, User, ArrowLeft, Phone, CheckCircle2, Check } from "lucide-react";
+import { Clock, Calendar as CalendarIcon, Users, User, ArrowLeft, Phone, CheckCircle2, Check } from "lucide-react";
 import { sendOtp } from "@/lib/firebase";
 import { Label } from "@/components/ui/label";
 const COUNTRY_NAME = "India";
@@ -67,12 +69,28 @@ export default function EnrollCoaching() {
   const [form, setForm] = useState({
     playerName: "",
     age: "",
+    dateOfBirth: "",
+    gender: "",
     mobile: "",
     email: "",
     city: "",
     localAddress: "",
     notes: "",
   });
+
+  useEffect(() => {
+    if (!form.dateOfBirth) return;
+
+    const diff = Date.now() - new Date(form.dateOfBirth).getTime();
+    const ageDt = new Date(diff);
+    const calculatedAge = Math.abs(ageDt.getUTCFullYear() - 1970);
+
+    setForm((prev) => ({
+      ...prev,
+      age: calculatedAge,
+    }));
+  }, [form.dateOfBirth]);
+
   /* ================= FETCH ================= */
   useEffect(() => {
     const fetchData = async () => {
@@ -96,6 +114,10 @@ export default function EnrollCoaching() {
       ...prev,
       playerName: user.fullName || "",
       age: user.age ? String(user.age) : "",
+      dateOfBirth: user.dateOfBirth
+        ? user.dateOfBirth.slice(0, 10)
+        : "",
+      gender: user.gender || "",
       mobile: user.mobile || "",
       email: user.email || "",
       city: user.address?.city || "",
@@ -393,6 +415,8 @@ export default function EnrollCoaching() {
         source: "website",
         playerName: form.playerName.trim(),
         age: Number(form.age),
+        dateOfBirth: form.dateOfBirth,
+        gender: form.gender,
         mobile: form.mobile,
         email: form.email?.toLowerCase() || "",
         address: {
@@ -443,7 +467,7 @@ export default function EnrollCoaching() {
           message ||
           "Something went wrong. Please try again.",
       });
-        return;
+      return;
     }
 
     /* ================= LOAD RAZORPAY ================= */
@@ -1073,15 +1097,73 @@ export default function EnrollCoaching() {
                 />
               </div>
 
+              {/* Date of Birth */}
+              <div className="space-y-1">
+                <Label>Date of Birth</Label>
+
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {form.dateOfBirth
+                        ? format(new Date(form.dateOfBirth), "dd MMM yyyy")
+                        : "Select date"}
+                    </Button>
+                  </PopoverTrigger>
+
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      captionLayout="dropdown"   // ✅ ONLY dropdowns (Month + Year)
+                      fromYear={1950}
+                      toYear={new Date().getFullYear()}
+                      selected={
+                        form.dateOfBirth ? new Date(form.dateOfBirth) : undefined
+                      }
+                      onSelect={(date) =>
+                        setForm({
+                          ...form,
+                          dateOfBirth: date
+                            ? format(date, "yyyy-MM-dd") // ✅ better for backend
+                            : "",
+                        })
+                      }
+                      disabled={(date) => date > new Date()} // 🚫 No future DOB
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Gender */}
+              <div className="space-y-1">
+                <Label>Gender</Label>
+                <Select
+                  value={form.gender}
+                  onValueChange={(value) =>
+                    setForm({ ...form, gender: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Gender" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="male">Male</SelectItem>
+                    <SelectItem value="female">Female</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Age (Auto) */}
               <div className="space-y-1">
                 <Label>Age</Label>
                 <Input
-                  type="number"
-                  placeholder="Enter age"
                   value={form.age}
-                  onChange={(e) =>
-                    setForm({ ...form, age: e.target.value })
-                  }
+                  disabled
+                  className="bg-gray-100"
                 />
               </div>
 
