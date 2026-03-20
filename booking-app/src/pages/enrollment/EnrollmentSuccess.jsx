@@ -58,13 +58,6 @@ export default function EnrollmentSuccess() {
           </div>
         </div>
 
-        {/* Trophy Icon
-        <div className="flex justify-center">
-          <div className="w-28 h-28 rounded-full bg-gradient-to-br from-green-600 to-orange-500 flex items-center justify-center shadow-xl">
-            <Trophy className="text-white w-10 h-10" />
-          </div>
-        </div> */}
-
         {/* Heading */}
         <div className="space-y-2">
           <h1 className="text-xl sm:text-4xl font-bold text-gray-900">
