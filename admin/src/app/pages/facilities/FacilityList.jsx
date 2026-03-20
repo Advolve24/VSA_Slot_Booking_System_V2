@@ -1,12 +1,11 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import api from "@/lib/axios";
-import {
-  MoreVertical,
-  X,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
+import { MoreHorizontal, Plus, Trash } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
 import {
   Sheet,
   SheetContent,
@@ -14,482 +13,850 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 
-const ITEMS_PER_PAGE = 5;
-const MOBILE_BREAKPOINT = 768;
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 
-export default function Facilities() {
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+
+const formatTime12h = (time) => {
+
+  if (!time) return "";
+
+  // if already formatted (contains AM/PM)
+  if (time.toLowerCase().includes("am") || time.toLowerCase().includes("pm")) {
+    return time;
+  }
+
+  const [hours, minutes] = time.split(":");
+  let h = parseInt(hours);
+
+  const ampm = h >= 12 ? "PM" : "AM";
+
+  h = h % 12;
+  h = h ? h : 12;
+
+  return `${h.toString().padStart(2, "0")}:${minutes} ${ampm}`;
+
+};
+
+export default function FacilityList() {
+
   const { toast } = useToast();
-  const menuRef = useRef(null);
 
   const [facilities, setFacilities] = useState([]);
   const [sports, setSports] = useState([]);
 
-  const [drawer, setDrawer] = useState(null); // add | edit | view
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [drawer, setDrawer] = useState(null);
   const [selected, setSelected] = useState(null);
-
-  const [menu, setMenu] = useState(null);
-  const [page, setPage] = useState(1);
-  const [isMobile, setIsMobile] = useState(
-    window.innerWidth < MOBILE_BREAKPOINT
-  );
 
   const [form, setForm] = useState({
     name: "",
     type: "",
+    pricingMode: "flat",
     hourlyRate: "",
+    timeSlots: [],
     status: "active",
     sports: [],
+    advanceType: "fixed",
+    advanceValue: "",
+    minBookingMinutes: 60,
+    bookingStepMinutes: 30,
+    openingTime: "",
+    closingTime: "",
   });
 
-  /* ================= FETCH ================= */
-  const loadFacilities = async () => {
+  const [isMobile, setIsMobile] = useState(false);
+
+useEffect(() => {
+  const check = () => setIsMobile(window.innerWidth < 768);
+  check();
+
+  window.addEventListener("resize", check);
+  return () => window.removeEventListener("resize", check);
+}, []);
+
+  useEffect(() => {
+    fetchFacilities();
+    fetchSports();
+  }, []);
+
+  const fetchFacilities = async () => {
     const res = await api.get("/facilities");
-    setFacilities(Array.isArray(res.data) ? res.data : []);
+    setFacilities(res.data || []);
   };
 
-  const loadSports = async () => {
+  const fetchSports = async () => {
     const res = await api.get("/sports");
-    setSports(Array.isArray(res.data) ? res.data : []);
+    setSports(res.data || []);
   };
 
-  useEffect(() => {
-    loadFacilities();
-    loadSports();
-  }, []);
-
-  /* ================= RESPONSIVE ================= */
-  useEffect(() => {
-    const resize = () =>
-      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-    window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
-  }, []);
-
-  /* ================= PAGINATION ================= */
-  const totalPages = Math.max(
-    1,
-    Math.ceil(facilities.length / ITEMS_PER_PAGE)
-  );
-
-  const paginatedFacilities = facilities.slice(
-    (page - 1) * ITEMS_PER_PAGE,
-    page * ITEMS_PER_PAGE
-  );
-
-  /* ================= MENU ================= */
-  const openMenu = (e, f) => {
-    e.stopPropagation();
-    const rect = e.currentTarget.getBoundingClientRect();
-    setMenu({
-      facility: f,
-      x: rect.right - 140,
-      y: rect.bottom + 6,
-    });
-  };
-
-  useEffect(() => {
-    const close = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setMenu(null);
-      }
-    };
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, []);
-
-  /* ================= DRAWER ================= */
   const resetForm = () => {
     setForm({
       name: "",
       type: "",
+      pricingMode: "flat",
       hourlyRate: "",
+      timeSlots: [],
       status: "active",
       sports: [],
+      advanceType: "fixed",
+      advanceValue: "",
+      minBookingMinutes: 60,
+      bookingStepMinutes: 30,
+      openingTime: "",
+      closingTime: "",
     });
-  };
-
-  const closeDrawer = () => {
-    setIsDrawerOpen(false);
-    setTimeout(() => {
-      setDrawer(null);
-      setSelected(null);
-      resetForm();
-    }, 300);
   };
 
   const openAdd = () => {
     resetForm();
     setDrawer("add");
-    setIsDrawerOpen(true);
-  };
-
-  const openView = (f) => {
-    setSelected(f);
-    setForm({
-      name: f.name,
-      type: f.type,
-      hourlyRate: f.hourlyRate,
-      status: f.status,
-      sports: f.sports.map((s) => s._id),
-    });
-    setDrawer("view");
-    setIsDrawerOpen(true);
-    setMenu(null);
   };
 
   const openEdit = (f) => {
+
     setSelected(f);
+
     setForm({
       name: f.name,
       type: f.type,
-      hourlyRate: f.hourlyRate,
+      pricingMode: f.pricingMode || "flat",
+      hourlyRate: f.hourlyRate || "",
+      timeSlots: f.timeSlots || [],
       status: f.status,
       sports: f.sports.map((s) => s._id),
+      advanceType: f.advanceType,
+      advanceValue: f.advanceValue,
+      minBookingMinutes: f.minBookingMinutes,
+      bookingStepMinutes: f.bookingStepMinutes,
+      openingTime: f.openingTime,
+      closingTime: f.closingTime,
     });
+
     setDrawer("edit");
-    setIsDrawerOpen(true);
-    setMenu(null);
   };
 
-  /* ================= FORM ================= */
   const toggleSport = (id) => {
+
     setForm((prev) => ({
       ...prev,
       sports: prev.sports.includes(id)
         ? prev.sports.filter((s) => s !== id)
         : [...prev.sports, id],
     }));
+
+  };
+
+  const closeDrawer = () => {
+    setDrawer(null);
+    setSelected(null);
+    resetForm();
+  };
+
+  /* ================= TIME SLOT ================= */
+
+  const addTimeSlot = () => {
+
+    const updated = [...form.timeSlots, { start: "", end: "", price: "" }];
+
+    const timing = calculateFacilityTiming(updated);
+
+    setForm({
+      ...form,
+      timeSlots: updated,
+      openingTime: timing.openingTime,
+      closingTime: timing.closingTime,
+    });
+
+  };
+
+  const updateTimeSlot = (index, key, value) => {
+
+    const updated = [...form.timeSlots];
+    updated[index][key] = value;
+
+    const timing = calculateFacilityTiming(updated);
+
+    setForm({
+      ...form,
+      timeSlots: updated,
+      openingTime: timing.openingTime,
+      closingTime: timing.closingTime,
+    });
+
+  };
+
+  const removeTimeSlot = (index) => {
+
+    const updated = form.timeSlots.filter((_, i) => i !== index);
+
+    const timing = calculateFacilityTiming(updated);
+
+    setForm({
+      ...form,
+      timeSlots: updated,
+      openingTime: timing.openingTime,
+      closingTime: timing.closingTime,
+    });
+
+  };
+
+  const calculateFacilityTiming = (slots) => {
+
+    if (!slots || !slots.length) {
+      return { openingTime: "", closingTime: "" };
+    }
+
+    if (slots.length === 1) {
+      return {
+        openingTime: slots[0].start,
+        closingTime: slots[0].end,
+      };
+    }
+
+    const first = slots[0];
+    const last = slots[slots.length - 1];
+    return {
+      openingTime: first.start,
+      closingTime: last.end,
+    };
+
   };
 
   /* ================= SAVE ================= */
+
   const saveFacility = async () => {
+
     try {
+
       const payload = {
-        name: form.name,
-        type: form.type,
-        hourlyRate: Number(form.hourlyRate),
-        status: form.status,
+
+        ...form,
+
         sports: form.sports,
+
+        hourlyRate:
+          form.pricingMode === "flat"
+            ? Number(form.hourlyRate)
+            : undefined,
+
+        advanceValue: Number(form.advanceValue),
+
+        minBookingMinutes: Number(form.minBookingMinutes),
+
+        bookingStepMinutes: Number(form.bookingStepMinutes),
+
+        timeSlots:
+          form.pricingMode === "time-based"
+            ? form.timeSlots.map((t) => ({
+              start: t.start,
+              end: t.end,
+              price: Number(t.price || 0),
+            }))
+            : [],
+
       };
 
-      drawer === "add"
-        ? await api.post("/facilities", payload)
-        : await api.put(`/facilities/${selected._id}`, payload);
+      if (drawer === "add") {
 
-      toast({ title: "Facility saved successfully" });
+        await api.post("/facilities", payload);
+        toast({ title: "Facility Added" });
+
+      } else {
+
+        await api.put(`/facilities/${selected._id}`, payload);
+        toast({ title: "Facility Updated" });
+
+      }
+
       closeDrawer();
-      loadFacilities();
+      fetchFacilities();
+
     } catch (err) {
+
       toast({
-        title: "Action failed",
-        description:
-          err?.response?.data?.message || "Server error",
+        title: "Error",
+        description: err?.response?.data?.message || "Failed",
         variant: "destructive",
       });
+
     }
+
   };
 
   const deleteFacility = async (id) => {
-    if (!confirm("Are you sure you want to delete this facility?")) return;
 
-    try {
-      await api.delete(`/facilities/${id}`);
-      toast({ title: "Facility deleted successfully" });
-      setMenu(null);
-      loadFacilities();
-    } catch (err) {
-      toast({
-        title: "Delete failed",
-        description:
-          err?.response?.data?.message || "Server error",
-        variant: "destructive",
-      });
-    }
+    if (!confirm("Delete this facility?")) return;
+
+    await api.delete(`/facilities/${id}`);
+
+    toast({ title: "Facility Deleted" });
+
+    fetchFacilities();
+
   };
 
-  /* ================= CONFIG ================= */
-  const STATUS_STYLES = {
-    active: "bg-green-100 text-green-700",
-    maintenance: "bg-orange-100 text-orange-700",
-    disabled: "bg-red-100 text-red-700",
-  };
-
-  const FACILITY_STATUS_OPTIONS = [
-    { value: "active", label: "Active" },
-    { value: "maintenance", label: "Maintenance" },
-    { value: "disabled", label: "Disabled" },
-  ];
-
-  const isView = drawer === "view";
-
-  /* ================= UI ================= */
+   const selectItemClass = `cursor-pointer transition-colors data-[highlighted]:bg-green-100 data-[highlighted]:text-green-900 data-[state=checked]:bg-green-600 data-[state=checked]:text-white`;
   return (
-    <div className="text-sm">
-      {/* HEADER */}
-      <div className="flex justify-between mb-4">
-        <h1 className="text-md sm:text-xl font-semibold text-green-800">
-          Facilities
-        </h1>
-        <button
-          onClick={openAdd}
-          className="bg-orange-500 text-white px-5 py-2 rounded-md"
-        >
+
+    <div className="space-y-6">
+
+      <div className="flex justify-between items-center">
+
+        <h1 className="text-xl font-semibold">Facilities</h1>
+
+        <Button onClick={openAdd} className="bg-green-700">
           + Add Facility
-        </button>
+        </Button>
+
       </div>
 
       {/* TABLE */}
-      <div className="hidden md:block bg-white border rounded-lg overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="p-4 text-left">Facility</th>
-              <th className="p-4 text-left">Sports</th>
-              <th className="p-4 text-center">Status</th>
-              <th className="p-4 text-center">Rate</th>
-              <th className="p-4 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paginatedFacilities.map((f) => (
-              <tr key={f._id} className="border-t">
-                <td className="p-4 font-medium">{f.name}</td>
 
-                <td className="p-4">
+      <div className="hidden md:block bg-white border rounded-xl overflow-hidden">
+        <table className="w-full text-sm">
+
+          <thead className="bg-slate-100 border-b  text-sm font-semibold">
+
+            <tr>
+              <th className="px-4 py-3 text-left">Facility</th>
+              <th className="px-4 py-3 text-left">Sports</th>
+              <th className="px-4 py-3 text-left">Pricing</th>
+              <th className="px-4 py-3 text-left">Advance</th>
+              <th className="px-4 py-3 text-left">Timings</th>
+              <th className="px-4 py-3 text-right">Action</th>
+            </tr>
+
+          </thead>
+
+          <tbody className="text-gray-700">
+
+            {facilities.map((f) => (
+
+              <tr
+                key={f._id}
+                className="border-t hover:bg-gray-50 transition-colors"
+              >
+
+                {/* Facility */}
+
+                <td className="px-4 py-3 font-medium text-gray-900">
+                  {f.name}
+                </td>
+
+                {/* Sports */}
+
+                <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-1">
-                    {f.sports.map((sp) => (
+                    {f.sports.map((s) => (
                       <span
-                        key={sp._id}
-                        className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs"
+                        key={s._id}
+                        className="bg-gray-100 px-2 py-1 rounded text-xs"
                       >
-                        {sp.name}
+                        {s.name}
                       </span>
                     ))}
                   </div>
                 </td>
 
-                <td className="p-4 text-center">
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs ${STATUS_STYLES[f.status]}`}
-                  >
-                    {f.status}
-                  </span>
+                {/* Pricing */}
+
+                <td className="px-4 py-3">
+
+                  {f.pricingMode === "flat" ? (
+
+                    <span className="font-medium text-gray-900">
+                      ₹{f.hourlyRate} / hour
+                    </span>
+
+                  ) : (
+
+                    <div className="space-y-1">
+
+                      {f.timeSlots.map((slot, index) => (
+
+                        <div
+                          key={index}
+                          className="flex items-center gap-4 text-sm"
+                        >
+
+                          <span className="font-medium text-gray-900">
+                            ₹{slot.price} / hour
+                          </span>
+
+                          <span className="text-gray-600">
+                            {formatTime12h(slot.start)} - {formatTime12h(slot.end)}
+                          </span>
+
+                        </div>
+
+                      ))}
+
+                    </div>
+
+                  )}
+
                 </td>
 
-                <td className="p-4 text-center">
-                  ₹{f.hourlyRate}
+                {/* Advance */}
+
+                <td className="px-4 py-3 font-medium">
+
+                  {f.advanceType === "fixed"
+                    ? `₹${f.advanceValue}`
+                    : `${f.advanceValue}%`}
+
                 </td>
 
-                <td className="p-4 text-right relative">
-                  <button onClick={(e) => openMenu(e, f)}>
-                    <MoreVertical />
-                  </button>
+                {/* Timings */}
+
+                <td className="px-4 py-3 text-gray-600">
+
+                  {formatTime12h(f.openingTime)} - {formatTime12h(f.closingTime)}
+
                 </td>
+
+                {/* Action */}
+
+                <td className="px-4 py-3 text-right">
+
+                  <DropdownMenu>
+
+                    <DropdownMenuTrigger asChild>
+
+                      <button className="p-2 rounded hover:bg-gray-100">
+
+                        <MoreHorizontal className="w-5 h-5 text-gray-600" />
+
+                      </button>
+
+                    </DropdownMenuTrigger>
+
+                    <DropdownMenuContent className="z-[9999] bg-white border shadow-lg" align="end">
+
+                      <DropdownMenuItem onClick={() => openEdit(f)}>
+                        Edit
+                      </DropdownMenuItem>
+
+                      <DropdownMenuItem
+                        className="text-red-600"
+                        onClick={() => deleteFacility(f._id)}
+                      >
+                        Delete
+                      </DropdownMenuItem>
+
+                    </DropdownMenuContent>
+
+                  </DropdownMenu>
+
+                </td>
+
               </tr>
+
             ))}
+
           </tbody>
+
         </table>
+
       </div>
-      {/* ================= MOBILE CARD VIEW ================= */}
+
+      {/* ================= MOBILE CARDS ================= */}
+
       <div className="md:hidden space-y-4">
-        {paginatedFacilities.map((f) => (
+
+        {facilities.map((f) => (
+
           <div
             key={f._id}
             className="bg-white border rounded-xl p-4 shadow-sm"
           >
-            {/* Top Section */}
-            <div className="flex justify-between items-start">
+
+            {/* TOP */}
+            <div className="flex justify-between items-start gap-3">
+
+              <div className="min-w-0">
+                <h3 className="font-semibold text-base truncate">
+                  {f.name}
+                </h3>
+
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {f.sports.map((s) => (
+                    <span
+                      key={s._id}
+                      className="bg-gray-100 px-2 py-0.5 rounded text-[10px]"
+                    >
+                      {s.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* ACTION */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="p-2 rounded hover:bg-gray-100">
+                    <MoreHorizontal className="w-5 h-5 text-gray-600" />
+                  </button>
+                </DropdownMenuTrigger>
+
+                <DropdownMenuContent className="z-[9999] bg-white border shadow-lg" align="end">
+                  <DropdownMenuItem onClick={() => openEdit(f)}>
+                    Edit
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    className="text-red-600"
+                    onClick={() => deleteFacility(f._id)}
+                  >
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+            </div>
+
+            {/* PRICING */}
+            <div className="mt-3 text-sm">
+
+              <p className="text-gray-500 text-xs">Pricing</p>
+
+              {f.pricingMode === "flat" ? (
+
+                <p className="font-medium text-gray-900">
+                  ₹{f.hourlyRate} / hour
+                </p>
+
+              ) : (
+
+                <div className="space-y-1 mt-1">
+
+                  {f.timeSlots.map((slot, index) => (
+
+                    <div key={index} className="flex justify-between text-xs">
+
+                      <span className="font-medium text-gray-900">
+                        ₹{slot.price}/hr
+                      </span>
+
+                      <span className="text-gray-600">
+                        {formatTime12h(slot.start)} - {formatTime12h(slot.end)}
+                      </span>
+
+                    </div>
+
+                  ))}
+
+                </div>
+
+              )}
+
+            </div>
+
+            {/* ADVANCE + TIMINGS */}
+            <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+
               <div>
-                <h3 className="font-semibold text-base">{f.name}</h3>
-                <p className="text-sm text-muted-foreground">
-                  ₹{f.hourlyRate} per slot
+                <p className="text-gray-500 text-xs">Advance</p>
+                <p className="font-medium">
+                  {f.advanceType === "fixed"
+                    ? `₹${f.advanceValue}`
+                    : `${f.advanceValue}%`}
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
-                <span
-                  className={`px-3 py-1 rounded-full text-[0.65rem] ${STATUS_STYLES[f.status]}`}
-                >
-                  {f.status}
-                </span>
-
-                <button
-                  onClick={(e) => openMenu(e, f)}
-                  className="p-1 hover:bg-gray-100 rounded"
-                >
-                  <MoreVertical className="w-5 h-5" />
-                </button>
+              <div>
+                <p className="text-gray-500 text-xs">Timings</p>
+                <p className="font-medium text-xs">
+                  {formatTime12h(f.openingTime)} - {formatTime12h(f.closingTime)}
+                </p>
               </div>
+
             </div>
 
-            {/* Sports Section */}
-            <div className="mt-3 flex flex-wrap gap-2">
-              {f.sports.map((sp) => (
-                <span
-                  key={sp._id}
-                  className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs"
-                >
-                  {sp.name}
-                </span>
-              ))}
-            </div>
           </div>
+
         ))}
+
       </div>
-
-
-      {/* PAGINATION */}
-      {totalPages > 1 && (
-        <div className="flex justify-center items-center gap-4 mt-4">
-          <button
-            disabled={page === 1}
-            onClick={() => setPage((p) => p - 1)}
-          >
-            <ChevronLeft />
-          </button>
-          <span>
-            Page {page} of {totalPages}
-          </span>
-          <button
-            disabled={page === totalPages}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            <ChevronRight />
-          </button>
-        </div>
-      )}
-
       {/* DRAWER */}
-      <Sheet
-        open={!!drawer}
-        onOpenChange={(open) => {
-          if (!open) closeDrawer();
-        }}
-      >
+
+      {/* ================= FACILITY DRAWER ================= */}
+
+      <Sheet open={!!drawer} onOpenChange={closeDrawer}>
         <SheetContent
           side={isMobile ? "bottom" : "right"}
           className={
             isMobile
-              ? "h-[85vh] rounded-t-2xl flex flex-col"
-              : "w-[420px] h-screen flex flex-col"
+              ? "h-[85vh] rounded-t-2xl flex flex-col px-3 pt-4 pb-2"
+              : "w-[34vw] h-screen flex flex-col"
           }
         >
-          <SheetHeader>
-            <SheetTitle className="capitalize">
-              {drawer} Facility
+
+          {/* HEADER */}
+          <SheetHeader className="shrink-0">
+            <SheetTitle>
+              {drawer === "add" ? "Add Facility" : "Edit Facility"}
             </SheetTitle>
           </SheetHeader>
 
-          {/* FORM */}
-          <div className="mt-6 space-y-5">
-            {/* Facility Name */}
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Facility Name</label>
-              <input
-                disabled={isView}
-                placeholder="Enter facility name"
-                className="w-full h-10 border rounded-md px-3 disabled:bg-gray-50 text-[13px]"
-                value={form.name}
-                onChange={(e) =>
-                  setForm({ ...form, name: e.target.value })
-                }
-              />
-            </div>
+          {/* BODY */}
+          <div className="flex-1 overflow-y-auto mt-4 pr-1">
 
-            {/* Facility Type */}
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Facility Type</label>
-              <input
-                disabled={isView}
-                placeholder="Enter facility type"
-                className="w-full h-10 border rounded-md px-3 disabled:bg-gray-50 text-[13px]"
-                value={form.type}
-                onChange={(e) =>
-                  setForm({ ...form, type: e.target.value })
-                }
-              />
-            </div>
+            <div className="space-y-5">
 
-            {/* Hourly Rate */}
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Slot Rate (₹)</label>
-              <input
-                disabled={isView}
-                placeholder="Enter slot rate "
-                type="number"
-                className="w-full h-10 border rounded-md px-3 disabled:bg-gray-50 text-[16px]"
-                value={form.hourlyRate}
-                onChange={(e) =>
-                  setForm({ ...form, hourlyRate: e.target.value })
-                }
-              />
-            </div>
+              {/* NAME + TYPE */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Facility Name</Label>
+                  <Input
+                    value={form.name}
+                    onChange={(e) =>
+                      setForm({ ...form, name: e.target.value })
+                    }
+                  />
+                </div>
 
-            {/* Sports */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Supported Sports
-              </label>
-              <div className="grid grid-cols-2 gap-2 border rounded-md p-3">
-                {sports.map((s) => (
-                  <label
-                    key={s._id}
-                    className="flex items-center gap-2 text-sm"
-                  >
-                    <input
-                      type="checkbox"
-                      disabled={isView}
-                      checked={form.sports.includes(s._id)}
-                      onChange={() => toggleSport(s._id)}
-                      className="accent-green-600"
-                    />
-                    {s.name}
-                  </label>
-                ))}
+                <div>
+                  <Label>Facility Type</Label>
+                  <Input
+                    value={form.type}
+                    onChange={(e) =>
+                      setForm({ ...form, type: e.target.value })
+                    }
+                  />
+                </div>
               </div>
+
+              {/* SPORTS */}
+              <div>
+                <Label>Supported Sports</Label>
+
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  {sports.map((sport) => (
+                    <label
+                      key={sport._id}
+                      className="flex items-center gap-2 border rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={form.sports.includes(sport._id)}
+                        onChange={() => toggleSport(sport._id)}
+                      />
+                      <span className="text-sm">{sport.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* PRICING MODE */}
+              <div>
+                <Label>Pricing Mode</Label>
+
+                <Select
+                  value={form.pricingMode}
+                  onValueChange={(v) =>
+                    setForm({ ...form, pricingMode: v })
+                  }
+                >
+                  <SelectTrigger className="w-full h-10 border">
+                    <SelectValue />
+                  </SelectTrigger>
+
+                  <SelectContent className="z-[9999] bg-white border shadow-lg">
+                    <SelectItem className={selectItemClass} value="flat">Flat Hourly</SelectItem>
+                    <SelectItem className={selectItemClass} value="time-based">Time Based</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* FLAT */}
+              {form.pricingMode === "flat" && (
+                <div>
+                  <Label>Hourly Rate (₹)</Label>
+                  <Input
+                    type="number"
+                    value={form.hourlyRate}
+                    onChange={(e) =>
+                      setForm({ ...form, hourlyRate: e.target.value })
+                    }
+                  />
+                </div>
+              )}
+
+              {/* TIME BASED */}
+              {form.pricingMode === "time-based" && (
+                <div className="space-y-3">
+                  <Label>Time Slots</Label>
+
+                  {form.timeSlots.map((slot, i) => (
+                    <div
+                      key={i}
+                      className="grid grid-cols-3 gap-2 items-center"
+                    >
+
+                      <Input
+                        type="time"
+                        value={slot.start}
+                        onChange={(e) =>
+                          updateTimeSlot(i, "start", e.target.value)
+                        }
+                      />
+
+                      <Input
+                        type="time"
+                        value={slot.end}
+                        onChange={(e) =>
+                          updateTimeSlot(i, "end", e.target.value)
+                        }
+                      />
+
+                      <div className="flex gap-1">
+                        <Input
+                          type="number"
+                          placeholder="₹"
+                          value={slot.price}
+                          onChange={(e) =>
+                            updateTimeSlot(i, "price", e.target.value)
+                          }
+                        />
+
+                        <Button
+                          size="icon"
+                          variant="destructive"
+                          onClick={() => removeTimeSlot(i)}
+                        >
+                          <Trash size={14} />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+
+                  <Button variant="outline" onClick={addTimeSlot}>
+                    + Add Slot
+                  </Button>
+                </div>
+              )}
+
+              {/* ADVANCE */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Advance Type</Label>
+
+                  <Select
+                    value={form.advanceType}
+                    onValueChange={(v) =>
+                      setForm({ ...form, advanceType: v })
+                    }
+                  >
+                    <SelectTrigger className="w-full h-10 border">
+                      <SelectValue />
+                    </SelectTrigger>
+
+                    <SelectContent className="z-[9999] bg-white border shadow-lg">
+                      <SelectItem className={selectItemClass} value="fixed">Fixed</SelectItem>
+                      <SelectItem className={selectItemClass} value="percent">%</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Advance Value</Label>
+                  <Input
+                    type="number"
+                    value={form.advanceValue}
+                    onChange={(e) =>
+                      setForm({ ...form, advanceValue: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+
+              {/* BOOKING RULES */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Min Minutes</Label>
+                  <Input
+                    type="number"
+                    value={form.minBookingMinutes}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        minBookingMinutes: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+
+                <div>
+                  <Label>Step Minutes</Label>
+                  <Input
+                    type="number"
+                    value={form.bookingStepMinutes}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        bookingStepMinutes: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              {/* TIMINGS */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Opening</Label>
+                  <Input
+                    type="time"
+                    disabled={form.pricingMode === "time-based"}
+                    value={form.openingTime}
+                    onChange={(e) =>
+                      setForm({ ...form, openingTime: e.target.value })
+                    }
+                  />
+                </div>
+
+                <div>
+                  <Label>Closing</Label>
+                  <Input
+                    type="time"
+                    disabled={form.pricingMode === "time-based"}
+                    value={form.closingTime}
+                    onChange={(e) =>
+                      setForm({ ...form, closingTime: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+
             </div>
 
-            {!isView && (
-              <button
-                onClick={saveFacility}
-                className="w-full h-12 bg-green-700 text-white rounded-md font-medium"
-              >
-                Save Facility
-              </button>
-            )}
           </div>
+
+          {/* FOOTER BUTTON */}
+          <div className="pt-3">
+            <Button
+              className="w-full bg-green-700"
+              onClick={saveFacility}
+            >
+              Save Facility
+            </Button>
+          </div>
+
         </SheetContent>
       </Sheet>
 
-
-      {/* MENU */}
-      {menu && (
-        <div
-          ref={menuRef}
-          style={{ top: menu.y, left: menu.x }}
-          className="fixed z-[9999] w-32 bg-white border rounded-xl shadow"
-        >
-          <button
-            onClick={() => openView(menu.facility)}
-            className="w-full px-4 py-2 text-left hover:bg-gray-100"
-          >
-            View
-          </button>
-          <button
-            onClick={() => openEdit(menu.facility)}
-            className="w-full px-4 py-2 text-left hover:bg-gray-100"
-          >
-            Edit
-          </button>
-          <button
-            onClick={() => deleteFacility(menu.facility._id)}
-            className="w-full px-4 py-2 text-left text-red-600 hover:bg-gray-100"
-          >
-            Delete
-          </button>
-        </div>
-      )}
     </div>
   );
 }

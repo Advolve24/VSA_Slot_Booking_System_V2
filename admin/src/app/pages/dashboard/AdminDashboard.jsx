@@ -19,7 +19,6 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6 mt-3">
 
-      {/* HEADER */}
       <div>
         <h1 className="text-2xl font-bold text-green-800">
           Dashboard
@@ -28,36 +27,22 @@ export default function AdminDashboard() {
           Academy overview
         </p>
       </div>
-
-      {/* PRIMARY STATS */}
       <StatsCards stats={stats} loading={loading} />
 
-      {/* ✅ UPCOMING SLOTS (Mobile position) */}
       <div className="block lg:hidden">
         <UpcomingSlots slots={stats?.upcomingSlots || []} />
       </div>
-
-      {/* SECONDARY STATS */}
       <SecondaryStats stats={stats} loading={loading} />
-
-      {/* QUICK ACTIONS */}
       <QuickActions />
-
-      {/* CHARTS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Charts stats={stats} />
         <RevenueOverview data={stats?.revenueSeries || []} />
       </div>
-
-      {/* ✅ DESKTOP 60-40 LAYOUT */}
       <div className="hidden lg:grid lg:grid-cols-5 gap-6">
-        
-        {/* 60% */}
+
         <div className="lg:col-span-3">
           <UpcomingSlots slots={stats?.upcomingSlots || []} />
         </div>
-
-        {/* 40% */}
         <div className="lg:col-span-2">
           <FacilityUtilization
             facilities={stats?.facilityUtilization || []}

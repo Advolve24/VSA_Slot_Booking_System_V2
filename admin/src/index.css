@@ -16,6 +16,23 @@ body {
   font-family: "Poppins", sans-serif;
 }
 
+@media print {
+
+  aside {
+    display: none !important;
+  }
+
+  button,
+  select {
+    display: none !important;
+  }
+
+  body {
+    overflow: visible !important;
+  }
+
+}
+
 /* shadcn/ui theme variables */
 @layer base {
   :root {

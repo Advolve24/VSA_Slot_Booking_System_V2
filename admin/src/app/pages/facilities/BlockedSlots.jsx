@@ -1,25 +1,28 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import api from "@/lib/axios";
 import { format } from "date-fns";
 import {
   Plus,
-  MoreVertical,
+  MoreHorizontal,
   CalendarIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+
 import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
 } from "@/components/ui/popover";
+
 import {
   Select,
   SelectTrigger,
@@ -27,6 +30,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
+
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -37,34 +41,45 @@ import {
 import { useToast } from "@/hooks/use-toast";
 
 /* ================= UTILS ================= */
+
 const toDateOnly = (d) => format(new Date(d), "yyyy-MM-dd");
-const formatTime12H = (time) => {
-  const h = Number(time.split(":")[0]);
-  return `${h % 12 || 12}:00 ${h < 12 ? "AM" : "PM"}`;
+
+const generateTimeOptions = () => {
+  const times = [];
+  for (let h = 6; h <= 23; h++) {
+    times.push(`${String(h).padStart(2, "0")}:00`);
+    times.push(`${String(h).padStart(2, "0")}:30`);
+  }
+  return times;
 };
 
-const selectTriggerClass =
-  "w-full h-10 text-sm bg-white border border-gray-300 rounded-md focus:ring-2 focus:ring-green-600";
-const selectItemClass =
-  "cursor-pointer transition-colors data-[highlighted]:bg-green-100 data-[highlighted]:text-green-900 data-[state=checked]:bg-green-600 data-[state=checked]:text-white";
+const formatTime12H = (time) => {
+  if (!time) return "";
+  const [h, m] = time.split(":").map(Number);
+  const hour = h % 12 || 12;
+  const ampm = h < 12 ? "AM" : "PM";
+  return `${hour}:${String(m).padStart(2, "0")} ${ampm}`;
+};
 
-export default function BlockedSlot() {
+const toMinutes = (time) => {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+};
+
+export default function BlockedTime() {
+
   const { toast } = useToast();
-  /* ================= STATE ================= */
+
   const [facilities, setFacilities] = useState([]);
   const [tableData, setTableData] = useState([]);
+
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [editingId, setEditingId] = useState(null);
+  const [loading, setLoading] = useState(false);
+
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [availableSlots, setAvailableSlots] = useState([]);
-  const [form, setForm] = useState({
-    facilityId: "",
-    date: toDateOnly(new Date()),
-    slots: [],
-    reason: "coaching",
-  });
+
   const [isMobile, setIsMobile] = useState(false);
-  /* ================= RESPONSIVE ================= */
+
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
     check();
@@ -72,7 +87,18 @@ export default function BlockedSlot() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
+  const [form, setForm] = useState({
+    facilityId: "",
+    date: toDateOnly(new Date()),
+    startTime: "",
+    endTime: "",
+    reason: "admin",
+  });
+
+  const timeOptions = generateTimeOptions();
+
   /* ================= LOAD ================= */
+
   useEffect(() => {
     loadFacilities();
     loadTable();
@@ -84,168 +110,124 @@ export default function BlockedSlot() {
   };
 
   const loadTable = async () => {
-    const res = await api.get("/turf-rentals/blocked-slots");
+    const res = await api.get("/blocked-times");
     setTableData(res.data || []);
   };
 
-  const loadSlots = async (facilityId, date) => {
-    if (!facilityId || !date) return;
-    const res = await api.get(
-      `/turf-rentals/facilities/${facilityId}/slots`,
-      { params: { date } }
-    );
-    setAvailableSlots(res.data || []);
-  };
-
-  /* ================= GROUP ================= */
-  const groupedSlots = useMemo(() => {
-    const morning = availableSlots.filter(
-      (s) => Number(s.time.split(":")[0]) < 12
-    );
-    const evening = availableSlots.filter(
-      (s) => Number(s.time.split(":")[0]) >= 12
-    );
-    return { morning, evening };
-  }, [availableSlots]);
-
   /* ================= ACTIONS ================= */
+
   const openAdd = () => {
     const d = new Date();
-    setEditingId(null);
     setSelectedDate(d);
-    setAvailableSlots([]);
+
     setForm({
       facilityId: "",
       date: toDateOnly(d),
-      slots: [],
-      reason: "coaching",
+      startTime: "",
+      endTime: "",
+      reason: "admin",
     });
+
     setDrawerOpen(true);
   };
 
-  const openEdit = async (row) => {
-    setEditingId(row._id);
-    setSelectedDate(new Date(row.date));
-    setForm({
-      facilityId: row.facilityId._id,
-      date: row.date,
-      slots: [],
-      reason: row.slots?.[0]?.reason || "coaching",
-    });
-    await loadSlots(row.facilityId._id, row.date);
-    setDrawerOpen(true);
-  };
+  const saveBlockedTime = async () => {
 
-  const closeDrawer = () => {
-    setDrawerOpen(false);
-    setEditingId(null);
-    setAvailableSlots([]);
-  };
-
-  const toggleSlot = (time) => {
-    setForm((f) => ({
-      ...f,
-      slots: f.slots.includes(time)
-        ? f.slots.filter((t) => t !== time)
-        : [...f.slots, time],
-    }));
-  };
-
-  /* ================= SAVE ================= */
-  const saveBlockedSlots = async () => {
-    if (!editingId && !form.slots.length) {
-      toast({
-        title: "Select slots",
-        description: "Select at least one available slot",
+    if (!form.facilityId || !form.startTime || !form.endTime) {
+      return toast({
+        title: "Missing fields",
         variant: "destructive",
       });
-      return;
+    }
+
+    if (toMinutes(form.endTime) <= toMinutes(form.startTime)) {
+      return toast({
+        title: "Invalid time",
+        variant: "destructive",
+      });
     }
 
     try {
-      if (form.slots.length > 0) {
-        await api.post("/turf-rentals/blocked-slots", {
-          facilityId: form.facilityId,
-          date: form.date,
-          slots: form.slots,
-          reason: form.reason,
-        });
-      }
+      setLoading(true);
 
-      toast({
-        title: "Saved",
-        description: "Blocked slots updated successfully",
-      });
+      await api.post("/blocked-times", form);
 
-      await loadTable();
-      closeDrawer();
+      toast({ title: "Blocked Successfully" });
+
+      loadTable();
+      setDrawerOpen(false);
+
     } catch (err) {
       toast({
         title: "Error",
-        description:
-          err.response?.data?.message || "Failed to save slots",
+        description: err.response?.data?.message,
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
     }
   };
 
-  /* ================= UI ================= */
+  const deleteBlock = async (id) => {
+    if (!confirm("Delete this blocked slot?")) return;
+
+    await api.delete(`/blocked-times/${id}`);
+    toast({ title: "Deleted" });
+    loadTable();
+  };
+
+  const selectItemClass = `cursor-pointer transition-colors data-[highlighted]:bg-green-100 data-[highlighted]:text-green-900 data-[state=checked]:bg-green-600 data-[state=checked]:text-white`;
   return (
     <div className="space-y-6">
-      {/* ================= HEADER ================= */}
+
+      {/* HEADER */}
       <div className="flex justify-between items-center">
-        <h1 className="text-md sm:text-xl font-semibold text-green-800">
-          Blocked Slots
-        </h1>
+        <h1 className="text-xl font-semibold">Blocked Time</h1>
         <Button onClick={openAdd} className="bg-green-700">
           <Plus className="mr-2 h-4 w-4" />
-          Block Slot
+          Block Time
         </Button>
       </div>
 
       {/* ================= DESKTOP TABLE ================= */}
       <div className="hidden md:block bg-white border rounded-xl overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr className="text-left">
-              <th className="p-3 text-left">Facility</th>
-              <th>Blocked Slots</th>
-              <th>Date</th>
-              <th className="text-right pr-4">Action</th>
+          <thead className="bg-slate-100 border-b">
+            <tr>
+              <th className="px-4 py-3 text-left">Facility</th>
+              <th className="px-4 py-3 text-left">Date</th>
+              <th className="px-4 py-3 text-left">Time</th>
+              <th className="px-4 py-3 text-left">Reason</th>
+              <th className="px-4 py-3 text-right">Action</th>
             </tr>
           </thead>
+
           <tbody>
             {tableData.map((row) => (
               <tr key={row._id} className="border-t">
-                <td className="p-3 font-medium">
-                  {row.facilityId?.name}
+                <td className="px-4 py-3">{row.facilityId?.name}</td>
+                <td className="px-4 py-3">
+                  {format(new Date(row.date), "dd MMM yyyy")}
                 </td>
-
-                <td>
-                  <div className="flex flex-wrap gap-1">
-                    {row.slots.map((s) => (
-                      <span
-                        key={s.startTime}
-                        className="text-[11px] px-2 py-[2px] rounded-full border bg-red-50 text-red-700 border-red-300"
-                      >
-                        {formatTime12H(s.startTime)}
-                      </span>
-                    ))}
-                  </div>
+                <td className="px-4 py-3">
+                  {formatTime12H(row.startTime)} - {formatTime12H(row.endTime)}
                 </td>
+                <td className="px-4 py-3 capitalize">{row.reason}</td>
 
-                <td>{format(new Date(row.date), "dd MMM yyyy")}</td>
-
-                <td className="text-right pr-4">
-                  <DropdownMenu>
+                <td className="px-4 py-3 text-right">
+                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button className="p-2 hover:bg-gray-100 rounded">
-                        <MoreVertical size={16} />
+                        <MoreHorizontal size={16} />
                       </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent className="z-[9999] bg-white border shadow-lg">
-                      <DropdownMenuItem onClick={() => openEdit(row)}>
-                        Edit
+
+                    <DropdownMenuContent className="z-[9999] bg-white border shadow-lg" align="end">
+                      <DropdownMenuItem
+                        onClick={() => deleteBlock(row._id)}
+                        className="text-red-600"
+                      >
+                        Delete
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -256,86 +238,84 @@ export default function BlockedSlot() {
         </table>
       </div>
 
-      {/* ================= MOBILE CARD VIEW ================= */}
+      {/* ================= MOBILE CARDS ================= */}
       <div className="md:hidden space-y-4">
         {tableData.map((row) => (
-          <div
-            key={row._id}
-            className="bg-white border rounded-xl p-3 shadow-sm"
-          >
-            <div className="flex justify-between items-start">
+          <div key={row._id} className="bg-white border rounded-xl p-4 shadow-sm">
+
+            <div className="flex justify-between">
               <div>
-                <h3 className="font-semibold text-base">
-                  {row.facilityId?.name}
-                </h3>
-                <p className="text-sm text-muted-foreground">
+                <h3 className="font-semibold">{row.facilityId?.name}</h3>
+                <p className="text-xs text-gray-500">
                   {format(new Date(row.date), "dd MMM yyyy")}
                 </p>
               </div>
 
               <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button className="p-2 hover:bg-gray-100 rounded">
-                    <MoreVertical size={16} />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="z-[9999] bg-white border shadow-lg">
-                  <DropdownMenuItem onClick={() => openEdit(row)}>
-                    Edit
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="p-2 hover:bg-gray-100 rounded">
+                        <MoreHorizontal size={16} />
+                      </button>
+                    </DropdownMenuTrigger>
+
+                    <DropdownMenuContent className="z-[9999] bg-white border shadow-lg" align="end">
+                      <DropdownMenuItem
+                        onClick={() => deleteBlock(row._id)}
+                        className="text-red-600"
+                      >
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
             </div>
 
-            <div className="mt-3 flex flex-wrap gap-2">
-              {row.slots.map((s) => (
-                <span
-                  key={s.startTime}
-                  className="text-xs px-3 py-1 rounded-full border bg-red-50 text-red-700 border-red-300"
-                >
-                  {formatTime12H(s.startTime)}
-                </span>
-              ))}
+            <div className="mt-3 text-sm">
+              <p className="text-gray-500 text-xs">Time</p>
+              <p className="font-medium">
+                {formatTime12H(row.startTime)} - {formatTime12H(row.endTime)}
+              </p>
             </div>
+
+            <div className="mt-2 text-sm">
+              <p className="text-gray-500 text-xs">Reason</p>
+              <p className="capitalize">{row.reason}</p>
+            </div>
+
           </div>
         ))}
       </div>
 
       {/* ================= DRAWER ================= */}
-      <Sheet open={drawerOpen} onOpenChange={closeDrawer}>
+
+      <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
         <SheetContent
           side={isMobile ? "bottom" : "right"}
           className={
             isMobile
-              ? "h-[70vh] rounded-t-2xl flex flex-col px-3 pt-4 pb-3"
-              : "w-[460px] h-screen flex flex-col"
+              ? "h-[75vh] rounded-t-2xl px-4 pt-4"
+              : "w-[400px]"
           }
         >
-          <SheetHeader className="shrink-0">
-            <SheetTitle>
-              {editingId ? "Edit Blocked Slots" : "Block Slots"}
-            </SheetTitle>
+          <SheetHeader>
+            <SheetTitle>Block Time</SheetTitle>
           </SheetHeader>
 
-          <div className="flex-1 overflow-y-auto mt-4 space-y-4 pr-1">
+          <div className="space-y-4 mt-4">
+
             {/* FACILITY */}
             <Select
               value={form.facilityId}
-              onValueChange={(v) => {
-                setForm((f) => ({ ...f, facilityId: v, slots: [] }));
-                loadSlots(v, form.date);
-              }}
+              onValueChange={(v) =>
+                setForm((f) => ({ ...f, facilityId: v }))
+              }
             >
-              <SelectTrigger className={selectTriggerClass}>
+              <SelectTrigger>
                 <SelectValue placeholder="Select facility" />
               </SelectTrigger>
-              <SelectContent className="bg-white border shadow-lg">
+
+              <SelectContent className="z-[9999] bg-white border shadow-lg">
                 {facilities.map((f) => (
-                  <SelectItem
-                    key={f._id}
-                    value={f._id}
-                    className={selectItemClass}
-                  >
+                  <SelectItem className={selectItemClass} key={f._id} value={f._id}>
                     {f.name}
                   </SelectItem>
                 ))}
@@ -345,71 +325,100 @@ export default function BlockedSlot() {
             {/* DATE */}
             <Popover>
               <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start h-10 bg-white border"
-                >
+                <Button variant="outline" className="w-full">
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {format(selectedDate, "dd MMM yyyy")}
                 </Button>
               </PopoverTrigger>
 
-              <PopoverContent className="z-[10000] p-0 bg-white border shadow-lg">
+              <PopoverContent>
                 <Calendar
                   mode="single"
                   selected={selectedDate}
                   onSelect={(d) => {
                     if (!d) return;
                     setSelectedDate(d);
-                    const apiDate = toDateOnly(d);
-                    setForm((f) => ({ ...f, date: apiDate }));
-                    loadSlots(form.facilityId, apiDate);
+                    setForm((f) => ({
+                      ...f,
+                      date: toDateOnly(d),
+                    }));
                   }}
-                  initialFocus
                 />
               </PopoverContent>
             </Popover>
 
-            {/* SLOT CHIPS */}
-            {[groupedSlots.morning, groupedSlots.evening].map(
-              (group, idx) => (
-                <div key={idx} className="flex flex-wrap gap-2">
-                  {group.map((slot) => {
-                    const selected = form.slots.includes(slot.time);
-
-                    return (
-                      <div
-                        key={slot.time}
-                        onClick={() =>
-                          slot.status === "available" &&
-                          toggleSlot(slot.time)
-                        }
-                        className={`px-4 py-2 rounded-full border text-sm cursor-pointer transition ${
-                          selected
-                            ? "bg-red-100 border-red-500 text-red-700"
-                            : "bg-green-50 border-green-400 text-green-700"
-                        }`}
-                      >
-                        {formatTime12H(slot.time)}
-                      </div>
-                    );
-                  })}
-                </div>
-              )
-            )}
-          </div>
-
-          {/* FIXED FOOTER */}
-          <div className="shrink-0 pt-3 border-t bg-white">
-            <Button
-              onClick={saveBlockedSlots}
-              className="w-full bg-green-700"
+            {/* START TIME */}
+            <Select
+              value={form.startTime}
+              onValueChange={(v) =>
+                setForm((f) => ({ ...f, startTime: v }))
+              }
             >
-              Save
+              <SelectTrigger>
+                <SelectValue placeholder="Start Time" />
+              </SelectTrigger>
+
+              <SelectContent className="z-[9999] bg-white border shadow-lg">
+                {timeOptions.map((t) => (
+                  <SelectItem  className={selectItemClass} key={t} value={t}>
+                    {formatTime12H(t)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* END TIME */}
+            <Select
+              value={form.endTime}
+              onValueChange={(v) =>
+                setForm((f) => ({ ...f, endTime: v }))
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="End Time" />
+              </SelectTrigger>
+
+              <SelectContent className="z-[9999] bg-white border shadow-lg">
+                {timeOptions.map((t) => (
+                  <SelectItem className={selectItemClass} key={t} value={t}>
+                    {formatTime12H(t)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* REASON */}
+            <Select
+              value={form.reason}
+              onValueChange={(v) =>
+                setForm((f) => ({ ...f, reason: v }))
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+
+              <SelectContent className="z-[9999] bg-white border shadow-lg">
+                <SelectItem className={selectItemClass} value="admin">Admin</SelectItem>
+                <SelectItem className={selectItemClass} value="maintenance">Maintenance</SelectItem>
+                <SelectItem className={selectItemClass} value="event">Event</SelectItem>
+                <SelectItem className={selectItemClass} value="coaching">Coaching</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Button
+              onClick={saveBlockedTime}
+              className="w-full bg-green-700"
+              disabled={loading}
+            >
+              {loading ? "Saving..." : "Save"}
             </Button>
+
           </div>
+
         </SheetContent>
       </Sheet>
+
     </div>
   );
 }

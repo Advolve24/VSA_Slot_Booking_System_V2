@@ -160,12 +160,12 @@ export default function SportsPage() {
                   <Pencil className="w-4 h-4" />
                 </button>
 
-                <button
+                {/* <button
                   onClick={() => removeSport(s._id)}
                   className="hover:text-red-300"
                 >
                   <Trash2 className="w-4 h-4" />
-                </button>
+                </button> */}
               </div>
             </div>
           </div>

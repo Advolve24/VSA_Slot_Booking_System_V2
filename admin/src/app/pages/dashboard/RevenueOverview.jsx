@@ -42,10 +42,10 @@ export default function RevenueOverview({ data = [] }) {
   return (
     <Card className="rounded-xl border w-full">
       <CardContent className="p-4 sm:p-5 md:p-6">
-        
-        {/* HEADER */}
+
+
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-          
+
           <div>
             <h2 className="text-base sm:text-lg font-semibold text-green-700">
               Revenue Overview
@@ -55,16 +55,15 @@ export default function RevenueOverview({ data = [] }) {
             </p>
           </div>
 
-          {/* CONTROLS */}
+
           <div className="flex gap-2 self-start sm:self-auto">
             <button
               disabled={!canPrev}
               onClick={handlePrev}
-              className={`p-2 rounded-md border transition ${
-                canPrev
+              className={`p-2 rounded-md border transition ${canPrev
                   ? "hover:bg-gray-100"
                   : "opacity-40 cursor-not-allowed"
-              }`}
+                }`}
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
@@ -72,25 +71,21 @@ export default function RevenueOverview({ data = [] }) {
             <button
               disabled={!canNext}
               onClick={handleNext}
-              className={`p-2 rounded-md border transition ${
-                canNext
+              className={`p-2 rounded-md border transition ${canNext
                   ? "hover:bg-gray-100"
                   : "opacity-40 cursor-not-allowed"
-              }`}
+                }`}
             >
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* EMPTY STATE */}
         {visibleData.length === 0 && (
           <div className="h-[220px] sm:h-[260px] flex items-center justify-center text-sm text-muted-foreground">
             No revenue data available
           </div>
         )}
-
-        {/* CHART */}
         {visibleData.length > 0 && (
           <>
             <div className="w-full h-[220px] sm:h-[260px] md:h-[280px]">
@@ -138,8 +133,6 @@ export default function RevenueOverview({ data = [] }) {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-
-            {/* LEGEND */}
             <div className="flex flex-wrap justify-center gap-4 mt-4 text-xs sm:text-sm">
               <div className="flex items-center gap-2 text-green-700">
                 <span className="w-3 h-3 rounded bg-green-600" />

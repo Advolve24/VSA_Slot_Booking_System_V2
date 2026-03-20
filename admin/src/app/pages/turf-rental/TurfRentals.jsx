@@ -1,151 +1,591 @@
-import { useRef, useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import api from "@/lib/axios";
+import { CalendarIcon, MoreHorizontal } from "lucide-react";
+import { Clock, MapPin } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { Plus, MoreVertical, X, CalendarIcon, Check, SlidersHorizontal, RotateCcw } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Textarea } from "@/components/ui/textarea";
-import { getMaharashtraCities } from "@/lib/location";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { useToast } from "@/hooks/use-toast";
 
-/* ================= PAYMENT STATUS ================= */
-const PAYMENT_STATUS_STYLES = { paid: "bg-green-100 text-green-700", pending: "bg-orange-100 text-orange-700", unpaid: "bg-red-100 text-red-700" };
-
-const getSlotRange = (slots = []) => {
-    if (!slots.length) return "";
-    const sorted = [...slots].sort();
-    const start = formatTime12h(sorted[0]);
-    const [h, m] = sorted[sorted.length - 1].split(":").map(Number);
-    const endHour = h + 1; // slots are hourly
-    const end = formatTime12h(
-        `${endHour.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`
-    );
-    return `${start} – ${end}`;
-};
-/* ================= FORMAT HELPERS ================= */
-const formatDateDMY = (date) => {
-    if (!date) return "—";
-    return format(new Date(date), "dd-MM-yyyy");
+/* ================= UTIL ================= */
+const toMinutes = (time) => {
+    if (!time) return 0;
+    const [h, m] = time.split(":").map(Number);
+    return h * 60 + m;
 };
 
 const formatTime12h = (time) => {
     if (!time) return "";
-
     const [h, m] = time.split(":").map(Number);
-    const hour12 = h % 12 || 12;
-    const suffix = h >= 12 ? "PM" : "AM";
-
-    return `${hour12}:${m.toString().padStart(2, "0")} ${suffix}`;
+    const date = new Date();
+    date.setHours(h);
+    date.setMinutes(m);
+    return date.toLocaleTimeString("en-IN", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true
+    });
 };
 
+const formatRange = (start, end) => {
+    return `${formatTime12h(start)} - ${formatTime12h(end)}`;
+};
+
+const isTimeConflicting = (start, end, blockedTimes) => {
+
+    if (!start || !end) return false;
+
+    const startMin = toMinutes(start);
+    const endMin = toMinutes(end);
+
+    return blockedTimes.some(b => {
+
+        const bStart = toMinutes(b.startTime);
+        const bEnd = toMinutes(b.endTime);
+
+        return startMin < bEnd && endMin > bStart;
+
+    });
+
+};
+
+const calcDuration = (start, end) => { if (!start || !end) return 0; return (toMinutes(end) - toMinutes(start)) / 60; };
+
+/* ================= PAGE ================= */
 
 export default function TurfRentals() {
+    const [page, setPage] = useState(1);
+    const limit = 4; // rows per page
     const navigate = useNavigate();
-
-    const ITEMS_PER_PAGE = 3; // change to 3/10 if needed
     const { toast } = useToast();
-    /* ================= DATA ================= */
     const [rentals, setRentals] = useState([]);
     const [facilities, setFacilities] = useState([]);
     const [sports, setSports] = useState([]);
-    const [slots, setSlots] = useState([]);
-    const [page, setPage] = useState(1);
-    /* ================= UI ================= */
-
-    const [menu, setMenu] = useState(null);
-    const [selected, setSelected] = useState(null);
-    const [dateOpen, setDateOpen] = useState(false);
-    const [hourlyRate, setHourlyRate] = useState(0);
-    const [discountCode, setDiscountCode] = useState("");
-    const [availableDiscounts, setAvailableDiscounts] = useState([]);
     const [drawer, setDrawer] = useState(null);
-    /* ================= FILTERS ================= */
-    const [filters, setFilters] = useState({ sport: "all", facility: "all", status: "all" });
-    const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
-    const [tempFilters, setTempFilters] = useState(filters);
+    const [selected, setSelected] = useState(null);
+    const [paymentDrawer, setPaymentDrawer] = useState(false);
+    const [paymentForm, setPaymentForm] = useState({
+        amount: "",
+        mode: "cash"
+    });
+    const [blockedTimes, setBlockedTimes] = useState([]);
+    const [refundBooking, setRefundBooking] = useState(null);
 
-    /* ================= FORM ================= */
-    const [form, setForm] = useState({
+    const emptyForm = {
         userName: "",
         phone: "",
         email: "",
 
         facilityId: "",
         facilityName: "",
-
         sportId: "",
         sportName: "",
 
-        rentalDate: null,
-        slots: [],
+        rentalDate: "",
+        startTime: "",
+        endTime: "",
 
-        paymentStatus: "pending",
-        paymentMode: "cash",
-
-        /* ================= AMOUNT FIELDS ================= */
         hourlyRate: 0,
         baseAmount: 0,
-        totalDiscountAmount: 0,
         finalAmount: 0,
 
-        /* ================= DISCOUNT ================= */
-        discountCodes: [],
-        discounts: [],
+        paymentType: "none",
+        paymentMode: "cash",
 
-        /* ================= ADDRESS ================= */
-        address: {
-            country: "India",
-            state: "Maharashtra",
-            city: "",
-            localAddress: "",
-        },
-    });
+        requiredAdvance: 0,
+        totalPaid: 0,
+        dueAmount: 0,
 
-    const selectedFacility = useMemo(
-        () => facilities.find((f) => f._id === form.facilityId),
-        [form.facilityId, facilities]
-    );
-    const allowedSports = selectedFacility?.sports || [];
+        advanceAmount: 0,
+        remainingAmount: 0
+    };
 
-    const cities = useMemo(() => getMaharashtraCities(), []);
+    const [form, setForm] = useState(emptyForm);
 
-    useEffect(() => {
-        if (!form.facilityId) return;
+    const isView = drawer === "view" || selected?.bookingStatus === "cancelled";
 
-        const f = facilities.find(x => x._id === form.facilityId);
-        if (f?.hourlyRate) setHourlyRate(f.hourlyRate);
-    }, [form.facilityId, facilities]);
+    /* ================= FETCH ================= */
 
-    useEffect(() => {
-        if (drawer === "view") return;
-        if (!hourlyRate) return;
-        const baseAmount = form.slots.length * hourlyRate;
-        let discountAmount = 0;
-        const selectedDiscount = availableDiscounts.find(
-            (d) => d.code === discountCode
-        );
-        if (selectedDiscount) {
-            if (selectedDiscount.type === "percentage") {
-                discountAmount = (baseAmount * selectedDiscount.value) / 100;
-            } else {
-                discountAmount = selectedDiscount.value;
-            }
+    const fetchAll = async () => {
+
+        try {
+
+            const [r, f] = await Promise.all([
+                api.get("/turf-rentals"),
+                api.get("/facilities")
+            ]);
+
+            setRentals(r.data || []);
+            setFacilities(f.data || []);
+
+        } catch (err) {
+
+            toast({
+                title: "Error",
+                description: "Failed to load data",
+                variant: "destructive"
+            });
+
         }
-        const finalAmount = baseAmount - discountAmount;
 
-        setForm((prev) => ({
+    };
+
+    useEffect(() => {
+        fetchAll();
+    }, []);
+
+    /* ================= FACILITY ================= */
+
+    const handleFacility = (id) => {
+
+        const facility = facilities.find(x => x._id === id);
+        if (!facility) return;
+        setSports(facility.sports || []);
+
+        setForm(prev => ({
             ...prev,
-            baseAmount,
-            totalDiscountAmount: discountAmount,
-            finalAmount,
+            facilityId: facility._id,
+            facilityName: facility.name,
+            sportId: "",
+            sportName: "",
+            hourlyRate: facility.hourlyRate || 0
         }));
-    }, [form.slots, hourlyRate, discountCode, availableDiscounts, drawer]);
+
+    };
+
+    /* ================= SPORT ================= */
+
+    const handleSport = (id) => {
+
+        const sport = sports.find(x => x._id === id);
+
+        if (!sport) return;
+
+        setForm(prev => ({
+            ...prev,
+            sportId: sport._id,
+            sportName: sport.name
+        }));
+
+    };
+
+    /* ================= DATE ================= */
+
+    const handleDate = (date) => {
+
+        const d = format(date, "yyyy-MM-dd");
+
+        setForm(p => ({
+            ...p,
+            rentalDate: d
+        }));
+
+    };
+
+    /* ================= TIME CALC ================= */
+
+    useEffect(() => {
+
+        const hours = calcDuration(form.startTime, form.endTime);
+
+        if (hours <= 0) {
+            setForm(p => ({
+                ...p,
+                baseAmount: 0,
+                finalAmount: 0
+            }));
+            return;
+        }
+
+        const base = Math.round((form.hourlyRate || 0) * hours);
+
+        setForm(p => ({
+            ...p,
+            baseAmount: base,
+            finalAmount: base
+        }));
+
+    }, [form.startTime, form.endTime]);
+
+
+    /* ================= SAVE ================= */
+
+    const saveRental = async () => {
+
+        /* ================= BASIC VALIDATION ================= */
+
+        if (!form.startTime || !form.endTime) {
+
+            toast({
+                title: "Invalid time",
+                description: "Select start and end time",
+                variant: "destructive"
+            });
+
+            return;
+        }
+
+        if (toMinutes(form.endTime) <= toMinutes(form.startTime)) {
+
+            toast({
+                title: "Invalid range",
+                description: "End time must be after start time",
+                variant: "destructive"
+            });
+
+            return;
+        }
+
+        /* ================= CONFLICT CHECK ================= */
+
+        const startMin = toMinutes(form.startTime);
+        const endMin = toMinutes(form.endTime);
+
+        const conflict = blockedTimes.some(t => {
+
+            const bStart = toMinutes(t.startTime);
+            const bEnd = toMinutes(t.endTime);
+
+            return startMin < bEnd && endMin > bStart;
+
+        });
+
+        if (conflict) {
+
+            toast({
+                title: "Time Conflict",
+                description: "Selected time conflicts with booked / batch / blocked slot",
+                variant: "destructive"
+            });
+
+            return;
+        }
+
+        /* ================= SAVE ================= */
+
+        try {
+
+            if (drawer === "add") {
+
+                await api.post("/turf-rentals", {
+                    ...form,
+                    source: "admin"
+                });
+
+                toast({ title: "Booking Created" });
+
+            } else {
+
+                await api.patch(`/turf-rentals/${selected._id}`, form);
+
+                toast({ title: "Booking Updated" });
+
+            }
+
+            setDrawer(null);
+            setForm(emptyForm);
+            fetchAll();
+
+        } catch (err) {
+
+            toast({
+                title: "Error",
+                description: err?.response?.data?.message || "Failed",
+                variant: "destructive"
+            });
+
+        }
+
+    };
+    /* ================= DELETE ================= */
+    const deleteRental = async (id) => {
+
+        if (!confirm("Delete this booking?")) return;
+
+        await api.delete(`/turf-rentals/${id}`);
+
+        toast({ title: "Booking Deleted" });
+
+        fetchAll();
+    };
+
+    /* ================= CANCEL BOOKING ================= */
+
+    const cancelRental = async (id) => {
+
+        if (!confirm("Cancel this booking? Refund may apply.")) return;
+
+        try {
+
+            await api.patch(`/turf-rentals/${id}/cancel`, {
+                source: "admin"
+            });
+
+            toast({
+                title: "Booking Cancelled",
+                description: "Booking cancelled by admin"
+            });
+
+            fetchAll();
+
+        } catch (err) {
+
+            toast({
+                title: "Cancellation Failed",
+                description: err?.response?.data?.message || "Error",
+                variant: "destructive"
+            });
+
+        }
+
+    };
+    /* ================= APPROVE REFUND ================= */
+
+    const approveRefund = async () => {
+
+        if (!refundBooking) return;
+
+        try {
+
+            await api.patch(`/turf-rentals/${refundBooking._id}/approve-refund`);
+
+            toast({
+                title: "Refund Approved",
+                description: "Customer refund has been approved"
+            });
+
+            setRefundBooking(null);
+
+            fetchAll();
+
+        } catch (err) {
+
+            toast({
+                title: "Refund Failed",
+                description: err?.response?.data?.message || "Error",
+                variant: "destructive"
+            });
+
+        }
+
+    };
+
+    const savePayment = async () => {
+
+        try {
+
+            await api.post(`/turf-rentals/${selected._id}/payments`, {
+                amount: Number(paymentForm.amount),
+                mode: paymentForm.mode,
+                paymentType: "balance"
+            });
+
+            toast({ title: "Payment Added" });
+
+            setPaymentDrawer(false);
+
+            fetchAll();
+
+        } catch (err) {
+
+            toast({
+                title: "Error",
+                description: err?.response?.data?.message || "Payment failed",
+                variant: "destructive"
+            });
+
+        }
+
+    };
+
+    const openAdd = () => {
+
+        setForm(emptyForm);
+        setSports([]);
+        setDrawer("add");
+    };
+    const openView = async (r) => {
+
+        try {
+
+            const res = await api.get(`/turf-rentals/${r._id}`);
+            const fullBooking = res.data;
+
+            setSelected(fullBooking);
+
+            const totalPaid = fullBooking.totalPaid || 0;
+            const finalAmount = fullBooking.finalAmount || 0;
+
+            const facilityId =
+                fullBooking.facilityId?._id || fullBooking.facilityId;
+
+            const facility = facilities.find(f => f._id === facilityId);
+
+            if (facility) {
+                setSports(facility.sports || []);
+            }
+
+            /* ✅ detect payment type from payments */
+            let paymentType = "none";
+            let paymentMode = "";
+
+            if (fullBooking.payments?.length) {
+
+                const firstPayment = fullBooking.payments[0];
+
+                paymentType = firstPayment.paymentType || "advance";
+                paymentMode = firstPayment.mode || "cash";
+
+            }
+
+            setForm({
+                ...emptyForm,
+                ...fullBooking,
+
+                facilityId,
+                sportId: fullBooking.sportId?._id || fullBooking.sportId,
+
+                paymentType,
+                paymentMode,
+
+                advanceAmount: totalPaid,
+                remainingAmount: finalAmount - totalPaid
+            });
+
+            setDrawer("view");
+
+        } catch (err) {
+
+            toast({
+                title: "Error",
+                description: "Failed to load booking details",
+                variant: "destructive"
+            });
+
+        }
+
+    };
+    const openEdit = (r) => {
+
+        setSelected(r);
+        const totalPaid = r.totalPaid || 0;
+        const finalAmount = r.finalAmount || 0;
+        const facilityId = r.facilityId?._id || r.facilityId;
+        const facility = facilities.find(f => f._id === facilityId);
+        if (facility) {
+            setSports(facility.sports || []);
+        }
+        setForm({
+            ...emptyForm,
+            ...r,
+            facilityId,
+            sportId: r.sportId?._id || r.sportId,
+
+            advanceAmount: totalPaid,
+            remainingAmount: finalAmount - totalPaid
+        });
+
+        setDrawer("edit");
+    };
+
+
+    const goToPayment = (id) => {
+        navigate(`/admin/turf-rentals/${id}/payment`);
+    };
+
+    const fetchPricePreview = async (facilityId, startTime, endTime) => {
+
+        if (!facilityId || !startTime || !endTime) return;
+
+        try {
+
+            const res = await api.post("/turf-rentals/preview-price", {
+                facilityId,
+                startTime,
+                endTime
+            });
+
+            const { finalAmount, requiredAdvance } = res.data;
+
+            setForm(prev => ({
+                ...prev,
+                finalAmount,
+                baseAmount: finalAmount,
+                requiredAdvance,
+                advanceAmount: requiredAdvance,
+                remainingAmount: finalAmount - requiredAdvance
+            }));
+
+        } catch (err) {
+
+            console.error("Price preview failed", err);
+        }
+
+    };
+
+    useEffect(() => {
+        fetchPricePreview(
+            form.facilityId,
+            form.startTime,
+            form.endTime
+        );
+    }, [form.facilityId, form.startTime, form.endTime]);
+
+    const fetchBlockedTimes = async (facilityId, date) => {
+        if (!facilityId || !date) return;
+
+        try {
+
+            const res = await api.get(
+                `/facilities/${facilityId}/unavailable`,
+                { params: { date } }
+            );
+
+            setBlockedTimes(res.data || []);
+
+        } catch (err) {
+
+            console.error("Failed to fetch unavailable times");
+
+        }
+
+    };
+    useEffect(() => {
+
+        fetchBlockedTimes(
+            form.facilityId,
+            form.rentalDate
+        );
+
+    }, [form.facilityId, form.rentalDate]);
+
+    const stats = useMemo(() => {
+
+        const total = rentals.length;
+
+        const confirmed = rentals.filter(
+            (r) => (r.totalPaid || 0) >= r.finalAmount
+        ).length;
+
+        const pending = rentals.filter(
+            (r) => (r.dueAmount ?? r.finalAmount) > 0
+        ).length;
+
+        const revenue = rentals.reduce(
+            (sum, r) => sum + (r.totalPaid || 0),
+            0
+        );
+
+        return { total, confirmed, pending, revenue };
+
+    }, [rentals]);
 
     const [isMobile, setIsMobile] = useState(false);
 
@@ -156,1539 +596,1338 @@ export default function TurfRentals() {
         return () => window.removeEventListener("resize", check);
     }, []);
 
-    /* ================= LOAD DATA ================= */
-    const loadRentals = async () => {
-        const res = await api.get("/turf-rentals");
-        setRentals(res.data);
-    };
-    const loadFacilities = async () => {
-        const res = await api.get("/facilities");
-        setFacilities(res.data.filter((f) => f.status === "active"));
-    };
-    const loadSports = async () => {
-        const res = await api.get("/sports");
-        setSports(res.data);
-    };
-    useEffect(() => {
-        loadRentals();
-        loadFacilities();
-        loadSports();
-    }, []);
-
-    useEffect(() => {
-        const loadDiscounts = async () => {
-            const res = await api.get("/discounts?type=turf");
-            setAvailableDiscounts(res.data || []);
-        };
-        loadDiscounts();
-    }, []);
-
-    /* ================= SLOTS ================= */
-    const loadSlots = async (facilityId, date) => {
-        if (!facilityId || !date) return;
-        const res = await api.get(
-            `/facilities/${facilityId}/slots?date=${date}`
-        );
-        setSlots(res.data);
-    };
-    const toggleSlot = (slot) => {
-        if (slot.status !== "available") return;
-        setForm((prev) => {
-            const exists = prev.slots.includes(slot.time);
-            return {
-                ...prev,
-                slots: exists
-                    ? prev.slots.filter((t) => t !== slot.time)
-                    : [...prev.slots, slot.time],
-            };
-        });
-    };
-
-    const resetForm = () => ({
-        userName: "",
-        phone: "",
-        email: "",
-
-        facilityId: "",
-        sportId: "",
-        rentalDate: null,
-        slots: [],
-
-        paymentStatus: "pending",
-        paymentMode: "cash",
-
-        /* ===== AMOUNT STRUCTURE ===== */
-        hourlyRate: 0,
-        baseAmount: 0,
-        totalDiscountAmount: 0,
-        finalAmount: 0,
-
-        /* ===== DISCOUNTS ===== */
-        discountCodes: [],
-        discounts: [],
-
-        /* ===== ADDRESS ===== */
-        address: {
-            country: "India",
-            state: "Maharashtra",
-            city: "",
-            localAddress: "",
-        },
-    });
-
-    /* ================= ADD ================= */
-
-    const openAdd = () => {
-        setForm(resetForm());
-        setSlots([]);
-        setDiscountCode("");
-        setSelected(null);
-        setDrawer("add");
-    };
-
-    /* ================= VIEW ================= */
-
-    const openView = async (r) => {
-        try {
-            setSelected(r);
-
-            setForm({
-                userName: r.userName,
-                phone: r.phone,
-                email: r.email,
-
-                facilityId: r.facilityId?._id,
-                sportId: r.sportId,
-                rentalDate: new Date(r.rentalDate),
-
-                slots: r.slots || [],
-
-                paymentStatus: r.paymentStatus,
-                paymentMode: r.paymentMode,
-
-                hourlyRate: r.hourlyRate || 0,
-                baseAmount: r.baseAmount || 0,
-                totalDiscountAmount: r.totalDiscountAmount || 0,
-                finalAmount: r.finalAmount || r.baseAmount || 0,
-
-                discountCodes:
-                    r.discounts?.map((d) => d.code).filter(Boolean) || [],
-                discounts: r.discounts || [],
-
-                address: r.address || {
-                    country: "India",
-                    state: "Maharashtra",
-                    city: "",
-                    localAddress: "",
-                },
-            });
-
-            if (r.facilityId?._id && r.rentalDate) {
-                await loadSlots(
-                    r.facilityId._id,
-                    format(new Date(r.rentalDate), "yyyy-MM-dd")
-                );
-            }
-
-            setDrawer("view");
-        } catch (err) {
-            toast({
-                title: "Error",
-                description: "Failed to open rental",
-                variant: "destructive",
-            });
-        }
-    };
-
-    /* ================= EDIT ================= */
-
-    const openEdit = async (r) => {
-        try {
-            setSelected(r);
-            setDiscountCode(r.discounts?.[0]?.code || "");
-
-            setForm({
-                userName: r.userName,
-                phone: r.phone,
-                email: r.email,
-
-                facilityId: r.facilityId?._id,
-                sportId: r.sportId,
-                rentalDate: new Date(r.rentalDate),
-
-                slots: r.slots || [],
-
-                paymentStatus: r.paymentStatus,
-                paymentMode: r.paymentMode,
-
-                hourlyRate: r.hourlyRate || 0,
-                baseAmount: r.baseAmount || 0,
-                totalDiscountAmount: r.totalDiscountAmount || 0,
-                finalAmount: r.finalAmount || r.baseAmount || 0,
-
-                discountCodes:
-                    r.discounts?.map((d) => d.code).filter(Boolean) || [],
-                discounts: r.discounts || [],
-
-                address: r.address || {
-                    country: "India",
-                    state: "Maharashtra",
-                    city: "",
-                    localAddress: "",
-                },
-            });
-
-            if (r.facilityId?._id && r.rentalDate) {
-                await loadSlots(
-                    r.facilityId._id,
-                    format(new Date(r.rentalDate), "yyyy-MM-dd")
-                );
-            }
-
-            setDrawer("edit");
-        } catch (err) {
-            toast({
-                title: "Error",
-                description: "Failed to edit rental",
-                variant: "destructive",
-            });
-        }
-    };
-
-    /* ================= SAVE ================= */
-
-    const saveRental = async () => {
-        try {
-            if (!form.slots.length) {
-                toast({
-                    title: "Select at least one slot",
-                    variant: "destructive",
-                });
-                return;
-            }
-
-            if (!form.facilityId || !form.sportId || !form.rentalDate) {
-                toast({
-                    title: "Please fill all required fields",
-                    variant: "destructive",
-                });
-                return;
-            }
-
-            const payload = {
-                source: "admin", // ✅ IMPORTANT
-
-                userName: form.userName,
-                phone: form.phone,
-                email: form.email,
-
-                facilityId: form.facilityId,
-                sportId: form.sportId,
-                rentalDate: format(form.rentalDate, "yyyy-MM-dd"),
-                slots: form.slots,
-
-                paymentStatus: form.paymentStatus,
-                paymentMode: form.paymentMode,
-
-                address: form.address,
-
-                /* ===== DISCOUNT SUPPORT ===== */
-
-                // If using coupon codes
-                discountCodes: form.discountCodes || [],
-
-                // If using manual admin discounts
-                discounts: form.discounts || [],
-            };
-
-            let res;
-
-            if (drawer === "add") {
-                res = await api.post("/turf-rentals", payload);
-                toast({ title: "Rental added successfully" });
-            } else {
-                res = await api.patch(`/turf-rentals/${selected._id}`, payload);
-                toast({ title: "Rental updated successfully" });
-            }
-
-            closeDrawer();
-            loadRentals();
-
-        } catch (err) {
-            toast({
-                title: "Action failed",
-                description: err?.response?.data?.message || "Server error",
-                variant: "destructive",
-            });
-        }
-    };
-    const deleteRental = async (id) => {
-        if (!confirm("Delete this rental?")) return;
-        await api.delete(`/turf-rentals/${id}`);
-        toast({ title: "Rental deleted" });
-        loadRentals();
-    };
-    const normalize = (v = "") => v.trim().toLowerCase();
-    const findExistingTurfUser = (name) => {
-        if (!name) return null;
-
-        return [...rentals]
-            .reverse() // prefer latest booking
-            .find(
-                (r) => normalize(r.userName) === normalize(name)
-            );
-    };
-    /* ================= SHADCN THEME ================= */
-    const selectTriggerClass =
-        "w-full h-11 text-sm bg-white border border-gray-300 rounded-md focus:ring-2 focus:ring-green-600";
-    const selectContentClass =
-        "z-[9999] bg-white border shadow-lg rounded-md";
-    const selectItemClass = ` cursor-pointer transition-colors data-[highlighted]:bg-green-100 data-[highlighted]:text-green-900 data-[state=checked]:bg-green-600 data-[state=checked]:text-white`;
-    /* ================= STATS ================= */
-    const total = rentals.length;
-    const confirmed = rentals.filter(
-        (r) => r.bookingStatus === "confirmed"
-    ).length;
-
-    const pending = rentals.filter(
-        (r) => r.bookingStatus === "pending"
-    ).length;
-    const revenue = rentals.reduce(
-        (sum, r) => sum + (Number(r.finalAmount) || 0),
-        0
-    );
-
-    const renderSlot = (slot) => {
-        const isSelected = form.slots.includes(slot.time);
-        if (drawer === "view") {
-            if (!isSelected) return null;
-            return (
-                <div
-                    key={slot.time}
-                    className="px-4 py-2 rounded-xl border text-sm bg-green-50 text-green-700 border-green-300"
-                >
-                    {slot.label}
-                </div>
-            );
-        }
-        let style = "";
-        if (isSelected) {
-            style = "bg-green-700 text-white border-green-700";
-        } else if (slot.status === "available") {
-            style = "bg-green-50 text-green-700 border-green-300 hover:bg-green-100";
-        } else if (slot.status === "booked") {
-            style = "bg-orange-50 text-orange-500 border-orange-300 cursor-not-allowed";
-        } else {
-            style = "bg-red-50 text-red-500 border-red-300 cursor-not-allowed";
-        }
-        return (
-            <button
-                key={slot.time}
-                disabled={slot.status !== "available"}
-                onClick={() => toggleSlot(slot)}
-                className={`px-4 py-2 rounded-xl border text-sm transition ${style}`}
-            >
-                {slot.label}
-            </button>
-        );
-    };
-    const renderSlotPills = (slots = []) => {
-        const visible = slots.slice(0, 4);
-        const extra = slots.length - 4;
-        return (
-            <div className="flex flex-wrap gap-1 max-w-[220px]">
-                {visible.map((time) => (
-                    <span
-                        key={time}
-                        className="px-2 py-0.5 rounded-full text-[11px]
-                     bg-green-100 text-green-700 border border-green-300"
-                    >
-                        {formatTime12h(time)}
-                    </span>
-                ))}
-                {extra > 0 && (
-                    <span className="px-2 py-0.5 text-[11px] rounded-full bg-gray-200 text-gray-600">
-                        +{extra} more
-                    </span>
-                )}
-            </div>
-        );
-    };
-    const upcomingBookings = useMemo(() => {
-        const now = new Date();
+    const upcomingSlots = useMemo(() => {
 
         const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        const tomorrow = new Date(today);
+        const tomorrow = new Date();
         tomorrow.setDate(today.getDate() + 1);
 
         return rentals
-            .map((r) => {
-                const rentalDate = new Date(r.rentalDate);
-                rentalDate.setHours(0, 0, 0, 0);
+            .filter((r) => {
 
-                // ❌ Only today & tomorrow
-                if (
-                    rentalDate.getTime() !== today.getTime() &&
-                    rentalDate.getTime() !== tomorrow.getTime()
-                ) {
-                    return null;
-                }
+                if (!r.rentalDate) return false;
 
-                let label = "Tomorrow";
+                // ❌ Skip cancelled bookings
+                if (r.bookingStatus === "cancelled") return false;
 
-                // ✅ If today → filter expired slots
-                if (rentalDate.getTime() === today.getTime()) {
-                    const validSlots = (r.slots || []).filter((time) => {
-                        const [h, m] = time.split(":").map(Number);
+                const d = new Date(r.rentalDate);
 
-                        const slotStart = new Date(r.rentalDate);
-                        slotStart.setHours(h, m, 0, 0);
+                return (
+                    d.toDateString() === today.toDateString() ||
+                    d.toDateString() === tomorrow.toDateString()
+                );
 
-                        const slotEnd = new Date(r.rentalDate);
-                        slotEnd.setHours(h + 1, m, 0, 0);
-
-                        return slotEnd > now;
-                    });
-
-                    if (!validSlots.length) return null;
-
-                    // 🔵 Check if currently running
-                    const isLive = validSlots.some((time) => {
-                        const [h, m] = time.split(":").map(Number);
-
-                        const slotStart = new Date(r.rentalDate);
-                        slotStart.setHours(h, m, 0, 0);
-
-                        const slotEnd = new Date(r.rentalDate);
-                        slotEnd.setHours(h + 1, m, 0, 0);
-
-                        return now >= slotStart && now < slotEnd;
-                    });
-
-                    label = isLive ? "Live Now" : "Upcoming Today";
-
-                    return {
-                        ...r,
-                        slots: validSlots,
-                        bookingLabel: label,
-                    };
-                }
-
-                // Tomorrow booking
-                return {
-                    ...r,
-                    bookingLabel: "Tomorrow",
-                };
             })
-            .filter(Boolean)
-            .sort((a, b) => new Date(a.rentalDate) - new Date(b.rentalDate))
-            .reduce((acc, r) => {
-                const key = format(new Date(r.rentalDate), "yyyy-MM-dd");
-                acc[key] = acc[key] || [];
-                acc[key].push(r);
-                return acc;
-            }, {});
+            .sort((a, b) => {
+
+                if (a.rentalDate === b.rentalDate) {
+                    return toMinutes(a.startTime) - toMinutes(b.startTime);
+                }
+
+                return new Date(a.rentalDate) - new Date(b.rentalDate);
+
+            });
+
     }, [rentals]);
 
-    /* ================= FILTER LOGIC ================= */
-    const filteredRentals = useMemo(() => {
-        return rentals.filter((r) => {
-            // SPORT FILTER
-            if (filters.sport !== "all" && r.sportId !== filters.sport) {
-                return false;
-            }
+    const getPaymentLabel = (r) => {
+        const paid = r.totalPaid || 0;
+        const total = r.finalAmount || 0;
+        const due = total - paid;
 
-            // FACILITY FILTER
-            if (filters.facility !== "all" && r.facilityId?._id !== filters.facility) {
-                return false;
-            }
-            // PAYMENT STATUS FILTER
-            if (filters.status !== "all" && r.paymentStatus !== filters.status) {
-                return false;
-            }
-
-            return true;
-        });
-    }, [rentals, filters]);
-
-    useEffect(() => {
-        setPage(1);
-    }, [filters, rentals]);
-    /* ================= PAGINATION ================= */
-    const totalPages = Math.ceil(filteredRentals.length / ITEMS_PER_PAGE);
-    const paginatedRentals = useMemo(() => {
-        const start = (page - 1) * ITEMS_PER_PAGE;
-        return filteredRentals.slice(start, start + ITEMS_PER_PAGE);
-    }, [filteredRentals, page]);
-
-    useEffect(() => {
-        if (drawer === "add") {
-            if (form.paymentMode === "cash" || form.paymentMode === "upi") {
-                setForm((prev) => ({
-                    ...prev,
-                    paymentStatus: "paid",
-                }));
-            }
+        if (paid >= total) {
+            return { label: "Paid", style: "bg-green-100 text-green-700" };
         }
-    }, [form.paymentMode]);
-    /* ================= SHADCN FILTER STYLES ================= */
-    const filterTriggerClass =
-        "h-9 text-sm bg-white border border-gray-300 rounded-md focus:ring-2 focus:ring-green-600";
-    const filterContentClass =
-        "z-[9999] bg-white border shadow-lg rounded-md";
-    const filterItemClass = `cursor-pointer transition-colors data-[highlighted]:bg-green-100 data-[highlighted]:text-green-900 data-[state=checked]:bg-green-600 data-[state=checked]:text-white `;
-    useEffect(() => {
-        if (!menu) return;
-        const closeMenu = () => setMenu(null);
-        window.addEventListener("click", closeMenu);
-        return () => window.removeEventListener("click", closeMenu);
-    }, [menu]);
+
+        if (paid > 0) {
+            return {
+                label: `Advance ₹${paid}`,
+                style: "bg-yellow-100 text-yellow-700"
+            };
+        }
+
+        return {
+            label: `Due ₹${due}`,
+            style: "bg-red-100 text-red-700"
+        };
+    };
+    const groupedSlots = useMemo(() => {
+        const map = {};
+
+        upcomingSlots.forEach((slot) => {
+            const date = slot.rentalDate;
+
+            if (!map[date]) {
+                map[date] = [];
+            }
+
+            map[date].push(slot);
+        });
+
+        return Object.entries(map)
+            .map(([date, slots]) => ({
+                date,
+                slots,
+                facilityName: slots[0]?.facilityName
+            }))
+            .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    }, [upcomingSlots]);
+    const hasMore = upcomingSlots.length > 6;
+
+    const totalPages = Math.ceil(rentals.length / limit);
+
+    const paginatedRentals = useMemo(() => {
+        const start = (page - 1) * limit;
+        const end = start + limit;
+        return rentals.slice(start, end);
+    }, [rentals, page]);
+
+    const selectTriggerClass = "w-full h-10 text-sm bg-white border border-gray-300 rounded-md focus:ring-2 focus:ring-green-600";
+    const selectItemClass = `cursor-pointer transition-colors data-[highlighted]:bg-green-100 data-[highlighted]:text-green-900 data-[state=checked]:bg-green-600 data-[state=checked]:text-white`;
 
     return (
-        <div className="text-sm">
-            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-3 mb-4 mt-4">
-                <div>
-                    <h1 className="text-xl sm:text-2xl font-bold text-green-800">Turf Rentals</h1>
-                    <p className="text-gray-500">
-                        Manage turf rental bookings and schedules.
+
+        <div className="space-y-6">
+
+            {/* HEADER */}
+
+            <div className="flex justify-between items-center mt-4">
+
+                <h1 className="text-xl font-semibold">
+                    Turf Rentals
+                </h1>
+
+                <Button
+                    className="bg-green-700 hover:bg-green-800"
+                    onClick={openAdd}
+                >
+                    Add Booking
+                </Button>
+
+            </div>
+
+
+            {/* ================= STATS ================= */}
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+
+                <div className="bg-white border rounded-xl p-4">
+                    <p className="text-2xl font-semibold text-green-700">
+                        {stats.total}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                        Total Rentals
                     </p>
                 </div>
 
-                <button
-                    onClick={openAdd}
-                    className="flex items-center justify-center gap-2 bg-green-700 text-white px-4 py-2 rounded-md w-[50%] md:w-auto"
-                >
-                    <Plus size={16} /> Add Turf Rental
-                </button>
-            </div>
-
-            {/* STATS */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <Stat label="Total Rentals" value={total} />
-                <Stat label="Confirmed" value={confirmed} />
-                <Stat label="Pending" value={pending} />
-                <Stat label="Total Revenue" value={`₹${revenue}`} />
-            </div>
-
-            <UpcomingBookings data={upcomingBookings} />
-            {/* ================= FILTER BAR ================= */}
-            <div className="bg-white border rounded-xl p-3 sm:p-4 mb-4">
-
-                {/* ================= DESKTOP FILTERS ================= */}
-                <div className="hidden md:grid grid-cols-3 gap-4">
-
-                    {/* SPORT */}
-                    <Select
-                        value={filters.sport}
-                        onValueChange={(v) =>
-                            setFilters((p) => ({ ...p, sport: v }))
-                        }
-                    >
-                        <SelectTrigger className={filterTriggerClass}>
-                            <SelectValue placeholder="All Sports" />
-                        </SelectTrigger>
-                        <SelectContent className="z-[9999] bg-white border shadow-lg">
-                            <SelectItem value="all" className={filterItemClass}>
-                                All Sports
-                            </SelectItem>
-                            {sports.map((s) => (
-                                <SelectItem key={s._id} value={s._id} className={filterItemClass}>
-                                    {s.name}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-
-                    {/* FACILITY */}
-                    <Select
-                        value={filters.facility}
-                        onValueChange={(v) =>
-                            setFilters((p) => ({ ...p, facility: v }))
-                        }
-                    >
-                        <SelectTrigger className={filterTriggerClass}>
-                            <SelectValue placeholder="All Facilities" />
-                        </SelectTrigger>
-                        <SelectContent className="z-[9999] bg-white border shadow-lg">
-                            <SelectItem value="all" className={filterItemClass}>
-                                All Facilities
-                            </SelectItem>
-                            {facilities.map((f) => (
-                                <SelectItem key={f._id} value={f._id} className={filterItemClass}>
-                                    {f.name}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-
-                    {/* STATUS */}
-                    <Select
-                        value={filters.status}
-                        onValueChange={(v) =>
-                            setFilters((p) => ({ ...p, status: v }))
-                        }
-                    >
-                        <SelectTrigger className={filterTriggerClass}>
-                            <SelectValue placeholder="All Status" />
-                        </SelectTrigger>
-                        <SelectContent className="z-[9999] bg-white border shadow-lg">
-                            <SelectItem value="all" className={filterItemClass}>
-                                All Status
-                            </SelectItem>
-                            <SelectItem value="paid" className={filterItemClass}>
-                                Paid
-                            </SelectItem>
-                            <SelectItem value="pending" className={filterItemClass}>
-                                Pending
-                            </SelectItem>
-                        </SelectContent>
-                    </Select>
+                <div className="bg-white border rounded-xl p-4">
+                    <p className="text-2xl font-semibold text-green-700">
+                        {stats.confirmed}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                        Confirmed
+                    </p>
                 </div>
 
-                {/* ================= MOBILE ICON ROW ================= */}
-                <div className="md:hidden flex justify-between gap-3">
-                    {/* FILTER ICON */}
-                    <button
-                        onClick={() => {
-                            setTempFilters(filters);
-                            setMobileFilterOpen(true);
-                        }}
-                        className="h-9 w-9 flex items-center justify-center rounded-xl border bg-gray-50 hover:bg-gray-100 transition"
-                    >
-                        <SlidersHorizontal className="w-5 h-5 text-gray-700" />
-                    </button>
-
-                    {/* REFRESH */}
-                    <button
-                        onClick={() =>
-                            setFilters({
-                                sport: "all",
-                                facility: "all",
-                                status: "all",
-                            })
-                        }
-                        className="h-9 w-9 flex items-center justify-center rounded-xl border bg-gray-50 hover:bg-gray-100 transition"
-                    >
-                        <RotateCcw className="w-5 h-5 text-gray-700" />
-                    </button>
+                <div className="bg-white border rounded-xl p-4">
+                    <p className="text-2xl font-semibold text-orange-500">
+                        {stats.pending}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                        Pending
+                    </p>
                 </div>
-                <div className="bg-white border rounded-lg overflow-visible mt-4">
 
-                    {/* ================= DESKTOP TABLE ================= */}
-                    <div className="hidden md:block">
-                        <table className="w-full">
-                            <thead className="bg-gray-50 text-gray-600">
-                                <tr className="text-left">
-                                    <th className="p-4 text-left">User Name</th>
-                                    <th className="p-4">Facility</th>
-                                    <th className="p-4">Sport</th>
-                                    <th className="p-4">Rental Date</th>
-                                    <th className="p-4">Slots</th>
-                                    <th className="p-4">Amount</th>
-                                    <th className="p-4">Status</th>
-                                    <th className="p-4 text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {paginatedRentals.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={8} className="p-6 text-center text-gray-500">
-                                            No turf rentals found
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    paginatedRentals.map((r) => (
-                                        <tr key={r._id} className="border-t hover:bg-gray-50">
-                                            <td className="p-4">{r.userName}</td>
-                                            <td className="p-4">{r.facilityName}</td>
-                                            <td className="p-4">{r.sportName}</td>
-                                            <td className="p-4">{formatDateDMY(r.rentalDate)}</td>
-                                            <td className="p-4">{renderSlotPills(r.slots)}</td>
-                                            <td className="p-4">₹{r.finalAmount}</td>
-                                            <td className="p-4">
-                                                <span
-                                                    className={`px-3 py-1 rounded-full text-xs font-medium ${PAYMENT_STATUS_STYLES[r.paymentStatus]}`}
-                                                >
-                                                    {r.paymentStatus}
-                                                </span>
-                                            </td>
-                                            <td className="p-4 text-right relative">
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setMenu(menu === r._id ? null : r._id);
-                                                    }}
-                                                >
-                                                    <MoreVertical />
-                                                </button>
+                <div className="bg-white border rounded-xl p-4">
+                    <p className="text-2xl font-semibold">
+                        ₹{stats.revenue.toLocaleString()}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                        Total Revenue
+                    </p>
+                </div>
 
-                                                {menu === r._id && (
-                                                    <div
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        className="absolute right-0 mt-0 w-40 bg-white border rounded-md shadow z-[60]"
-                                                    >
-                                                        <button
-                                                            onClick={() => {
-                                                                openView(r);
-                                                                setMenu(null);
-                                                            }}
-                                                            className="block w-full text-left px-4 py-2 hover:bg-gray-100"
-                                                        >
-                                                            View
-                                                        </button>
+            </div>
 
-                                                        <button
-                                                            onClick={() => {
-                                                                openEdit(r);
-                                                                setMenu(null);
-                                                            }}
-                                                            className="block w-full text-left px-4 py-2 hover:bg-gray-100"
-                                                        >
-                                                            Edit
-                                                        </button>
+            {/* ================= UPCOMING SLOTS ================= */}
 
-                                                        <button
-                                                            onClick={() => {
-                                                                navigate(`/admin/turf-rentals/invoice/${r._id}`);
-                                                                toast({ title: "Opening invoice view" });
-                                                                setMenu(null);
-                                                            }}
-                                                            className="block w-full text-left px-4 py-2 hover:bg-gray-100"
-                                                        >
-                                                            View Invoice
-                                                        </button>
+            <div className="bg-white border rounded-xl p-5">
 
-                                                        <button
-                                                            onClick={() => {
-                                                                deleteRental(r._id);
-                                                                setMenu(null);
-                                                            }}
-                                                            className="block w-full text-left px-4 py-2 text-red-600 hover:bg-gray-100"
-                                                        >
-                                                            Delete
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </td>
-
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
+                {/* HEADER */}
+                <div className="flex justify-between items-center mb-4">
+                    <div>
+                        <h2 className="font-semibold">Upcoming Slots</h2>
+                        <p className="text-xs text-gray-500">Today & Tomorrow</p>
                     </div>
 
-                    {/* ================= MOBILE CARD VIEW ================= */}
-                    <div className="md:hidden divide-y">
-                        {paginatedRentals.length === 0 ? (
-                            <div className="p-6 text-center text-gray-500">
-                                No turf rentals found
-                            </div>
-                        ) : (
-                            paginatedRentals.map((r) => (
-                                <div key={r._id} className="p-4 space-y-3">
+                    <span className="text-green-600 text-sm font-medium">
+                        {upcomingSlots.length} slots
+                    </span>
+                </div>
 
-                                    {/* Top Row */}
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <div className="font-semibold text-gray-900">
-                                                {r.userName}
-                                            </div>
-                                            <div className="text-sm text-gray-500">
-                                                {r.facilityName} • {r.sportName}
-                                            </div>
-                                        </div>
 
-                                        <span
-                                            className={`px-3 py-1 rounded-full text-xs font-medium ${PAYMENT_STATUS_STYLES[r.paymentStatus]}`}
-                                        >
-                                            {r.paymentStatus}
-                                        </span>
-                                    </div>
+                {/* GRID */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 
-                                    {/* Date + Slots */}
-                                    <div className="text-sm text-gray-600">
-                                        {formatDateDMY(r.rentalDate)}
-                                    </div>
+                    {groupedSlots.map((group) => (
 
-                                    <div className="flex flex-wrap gap-1">
-                                        {renderSlotPills(r.slots)}
-                                    </div>
+                        <div
+                            key={group.date}
+                            className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition border"
+                        >
 
-                                    {/* Bottom Row */}
-                                    <div className="flex justify-between items-center pt-2">
-                                        <div className="font-semibold text-green-700">
-                                            ₹{r.finalAmount}
-                                        </div>
+                            {/* DATE */}
+                            <p className="text-xs text-gray-500 flex items-center gap-2 mb-3">
+                                <CalendarIcon className="w-4 h-4" />
+                                {format(new Date(group.date), "dd MMM yyyy")}
+                            </p>
 
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setMenu(menu === r._id ? null : r._id);
-                                            }}
-                                        >
-                                            <MoreVertical size={18} />
-                                        </button>
-                                    </div>
-                                    {/* Mobile Menu */}
-                                    {menu === r._id && (
+
+                            {/* SLOTS */}
+                            <div className="space-y-2">
+                                {group.slots.map((slot) => {
+                                    const payment = getPaymentLabel(slot);
+                                    return (
                                         <div
-                                            onClick={(e) => e.stopPropagation()}
-                                            className="mt-2 w-full bg-white border rounded-md shadow z-[60]"
+                                            key={slot._id}
+                                            className="flex justify-between items-center text-sm"
                                         >
-                                            <button
-                                                onClick={() => {
-                                                    openView(r);
-                                                    setMenu(null);
-                                                }}
-                                                className="block w-full text-left px-4 py-2 hover:bg-gray-100"
+                                            <div className="flex items-center gap-2 font-medium">
+                                                <Clock className="w-4 h-4" />
+                                                {formatRange(slot.startTime, slot.endTime)}
+                                            </div>
+                                            <span
+                                                className={`text-xs px-2 py-1 rounded-full ${payment.style}`}
                                             >
+                                                {payment.label}
+                                            </span>
+
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            <p className="text-sm text-gray-500 flex items-center gap-2 mt-3">
+                                <MapPin className="w-4 h-4" />
+                                {group.facilityName}
+                            </p>
+
+                        </div>
+
+                    ))}
+
+                </div>
+                {!groupedSlots.length && (
+                    <p className="text-sm text-gray-500 text-center py-6">
+                        No upcoming slots
+                    </p>
+                )}
+
+            </div>
+
+
+            {/* ================= DESKTOP TABLE ================= */}
+
+            <div className="hidden md:block border rounded-xl bg-white overflow-x-auto">
+
+                <table className="w-full text-sm">
+
+                    <thead className="bg-slate-100 border-b">
+
+                        <tr className="text-left">
+
+                            <th className="p-3">Customer</th>
+                            <th>Facility</th>
+                            <th>Sport</th>
+                            <th>Date</th>
+                            <th>Time</th>
+                            <th>Total</th>
+                            <th>Paid</th>
+                            <th>Due</th>
+                            <th className="text-right pr-3">Action</th>
+
+                        </tr>
+
+                    </thead>
+
+                    <tbody>
+
+                        {paginatedRentals.map((r) => (
+
+                            <tr
+                                key={r._id}
+                                className={`border-t ${r.bookingStatus === "cancelled"
+                                    ? "bg-gray-100 "
+                                    : ""
+                                    }`}
+                            >
+
+                                <td className="p-3 font-medium">
+
+                                    <div className="flex flex-col">
+
+                                        <span>{r.userName}</span>
+
+                                        {r.bookingStatus === "cancelled" && (
+
+                                            <span className="text-xs text-red-600 font-medium">
+                                                Cancelled
+                                            </span>
+
+                                        )}
+
+                                    </div>
+
+                                </td>
+
+                                <td>{r.facilityName}</td>
+
+                                <td>{r.sportName}</td>
+
+                                <td>{r.rentalDate}</td>
+
+                                <td>
+                                    {formatTime12h(r.startTime)} - {formatTime12h(r.endTime)}
+                                </td>
+
+                                <td className="font-semibold">
+                                    ₹ {r.finalAmount}
+                                </td>
+
+                                <td className="text-green-700 font-semibold">
+                                    ₹ {r.totalPaid || 0}
+                                </td>
+
+                                <td className="text-red-600 font-semibold">
+                                    {(r.dueAmount ?? r.finalAmount) > 0
+                                        ? `₹ ${r.dueAmount}`
+                                        : "-"}
+                                </td>
+
+                                <td className="text-right pr-3">
+
+                                    <DropdownMenu>
+
+                                        <DropdownMenuTrigger asChild>
+
+                                            <button className="p-2 hover:bg-gray-100 rounded">
+                                                <MoreHorizontal className="w-5 h-5" />
+                                            </button>
+
+                                        </DropdownMenuTrigger>
+
+                                        <DropdownMenuContent className="bg-white border shadow-lg">
+
+                                            <DropdownMenuItem onClick={() => openView(r)}>
                                                 View
-                                            </button>
+                                            </DropdownMenuItem>
 
-                                            <button
-                                                onClick={() => {
-                                                    openEdit(r);
-                                                    setMenu(null);
-                                                }}
-                                                className="block w-full text-left px-4 py-2 hover:bg-gray-100"
-                                            >
-                                                Edit
-                                            </button>
+                                            {r.bookingStatus !== "cancelled" && (
+                                                <DropdownMenuItem onClick={() => openEdit(r)}>
+                                                    Edit
+                                                </DropdownMenuItem>
+                                            )}
 
-                                            <button
-                                                onClick={() => {
-                                                    navigate(`/admin/turf-rentals/invoice/${r._id}`);
-                                                    toast({ title: "Opening invoice view" });
-                                                    setMenu(null);
-                                                }}
-                                                className="block w-full text-left px-4 py-2 hover:bg-gray-100"
-                                            >
-                                                View Invoice
-                                            </button>
+                                            {/* CANCEL BOOKING */}
 
-                                            <button
-                                                onClick={() => {
-                                                    deleteRental(r._id);
-                                                    setMenu(null);
-                                                }}
-                                                className="block w-full text-left px-4 py-2 text-red-600 hover:bg-gray-100"
+                                            {r.bookingStatus !== "cancelled" && (
+
+                                                <DropdownMenuItem
+                                                    className="text-orange-600"
+                                                    onClick={() => cancelRental(r._id)}
+                                                >
+                                                    Cancel Booking
+                                                </DropdownMenuItem>
+
+                                            )}
+
+                                            {/* APPROVE REFUND */}
+
+                                            {r.bookingStatus === "cancelled" && r.refundStatus === "pending" && (
+
+                                                <DropdownMenuItem
+                                                    className="text-green-700"
+                                                    onClick={() => setRefundBooking(r)}
+                                                >
+                                                    Approve Refund
+                                                </DropdownMenuItem>
+
+                                            )}
+
+                                            {r.dueAmount > 0 && r.bookingStatus !== "cancelled" && (
+
+                                                <DropdownMenuItem
+                                                    onClick={() => goToPayment(r._id)}
+                                                >
+                                                    Collect Payment
+                                                </DropdownMenuItem>
+
+                                            )}
+
+                                            <DropdownMenuItem
+                                                className="text-red-600"
+                                                onClick={() => deleteRental(r._id)}
                                             >
                                                 Delete
-                                            </button>
-                                        </div>
+                                            </DropdownMenuItem>
+
+                                        </DropdownMenuContent>
+
+                                    </DropdownMenu>
+
+                                </td>
+
+                            </tr>
+
+                        ))}
+
+                    </tbody>
+
+                </table>
+            </div>
+
+            {/* ================= MOBILE CARDS ================= */}
+
+            <div className="md:hidden space-y-4">
+
+                {paginatedRentals.map((r) => (
+                    <div
+                        key={r._id}
+                        className="bg-white border rounded-xl p-4"
+                    >
+
+                        <div className="flex justify-between items-start">
+
+                            <div>
+
+                                <p className="font-semibold flex items-center gap-2">
+
+                                    {r.userName}
+
+                                    {r.bookingStatus === "cancelled" && (
+                                        <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded">
+                                            Cancelled ({r.cancellationSource})
+                                        </span>
                                     )}
-                                </div>
-                            ))
+
+                                </p>
+
+                                <p className="text-sm text-gray-500">
+                                    {r.facilityName} • {r.sportName}
+                                </p>
+
+                            </div>
+
+                            <DropdownMenu>
+
+                                <DropdownMenuTrigger asChild>
+
+                                    <button className="p-1 hover:bg-gray-100 rounded">
+                                        <MoreHorizontal className="w-5 h-5" />
+                                    </button>
+
+                                </DropdownMenuTrigger>
+
+                                <DropdownMenuContent className="bg-white border shadow-lg">
+
+                                    <DropdownMenuItem onClick={() => openView(r)}>
+                                        View
+                                    </DropdownMenuItem>
+
+                                    {r.bookingStatus !== "cancelled" && (
+                                        <DropdownMenuItem onClick={() => openEdit(r)}>
+                                            Edit
+                                        </DropdownMenuItem>
+                                    )}
+
+                                    {r.bookingStatus !== "cancelled" && (
+
+                                        <DropdownMenuItem
+                                            className="text-orange-600"
+                                            onClick={() => cancelRental(r._id)}
+                                        >
+                                            Cancel Booking
+                                        </DropdownMenuItem>
+
+                                    )}
+
+                                    {r.bookingStatus === "cancelled" && r.refundStatus === "pending" && (
+
+                                        <DropdownMenuItem
+                                            className="text-green-700"
+                                            onClick={() => setRefundBooking(r)}
+                                        >
+                                            Approve Refund
+                                        </DropdownMenuItem>
+
+                                    )}
+
+                                    {r.dueAmount > 0 && r.bookingStatus !== "cancelled" && (
+
+                                        <DropdownMenuItem
+                                            onClick={() => goToPayment(r._id)}
+                                        >
+                                            Collect Payment
+                                        </DropdownMenuItem>
+
+                                    )}
+
+                                    <DropdownMenuItem
+                                        className="text-red-600"
+                                        onClick={() => deleteRental(r._id)}
+                                    >
+                                        Delete
+                                    </DropdownMenuItem>
+
+                                </DropdownMenuContent>
+
+                            </DropdownMenu>
+
+                        </div>
+
+
+                        <div className="mt-3 bg-gray-50 rounded-lg p-3 text-sm">
+
+                            <p className="font-medium">
+                                {formatTime12h(r.startTime)} - {formatTime12h(r.endTime)}
+                            </p>
+
+                            <p className="text-gray-500">
+                                {r.rentalDate}
+                            </p>
+
+                        </div>
+
+                        <div className="mt-3 flex justify-between text-sm">
+
+                            <span className="font-semibold">
+                                ₹ {r.finalAmount}
+                            </span>
+
+                            <span className="text-green-700">
+                                Paid ₹ {r.totalPaid || 0}
+                            </span>
+
+                        </div>
+
+                        {(r.dueAmount ?? r.finalAmount) > 0 && (
+
+                            <p className="text-red-600 text-sm mt-1">
+                                Due ₹ {r.dueAmount}
+                            </p>
+
                         )}
+
                     </div>
-                </div>
 
-                {/* ================= PAGINATION ================= */}
-                {totalPages > 1 && (
-                    <div className="flex justify-between items-center px-4 py-3  bg-white">
-                        <span className="text-sm text-gray-500">
+                ))}
+
+            </div>
+            {/* ================= PAGINATION ================= */}
+
+            {totalPages > 1 && (
+
+                <div className="mt-6">
+
+                    {/* DESKTOP PAGINATION */}
+                    <div className="hidden md:flex justify-between items-center">
+
+                        <p className="text-sm text-gray-500">
                             Page {page} of {totalPages}
-                        </span>
+                        </p>
 
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
+
                             <Button
                                 variant="outline"
                                 size="sm"
                                 disabled={page === 1}
-                                onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                                onClick={() => setPage(page - 1)}
                             >
                                 Previous
                             </Button>
+
+                            {Array.from({ length: totalPages }).map((_, i) => (
+
+                                <Button
+                                    key={i}
+                                    size="sm"
+                                    variant={page === i + 1 ? "default" : "outline"}
+                                    className={
+                                        page === i + 1
+                                            ? "bg-green-700 hover:bg-green-800 text-white"
+                                            : ""
+                                    }
+                                    onClick={() => setPage(i + 1)}
+                                >
+                                    {i + 1}
+                                </Button>
+
+                            ))}
 
                             <Button
                                 variant="outline"
                                 size="sm"
                                 disabled={page === totalPages}
-                                onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+                                onClick={() => setPage(page + 1)}
                             >
                                 Next
                             </Button>
+
                         </div>
                     </div>
-                )}
-            </div>
 
-            {/* RIGHT SHEET */}
+                    {/* MOBILE PAGINATION */}
+                    <div className="flex md:hidden justify-between items-center">
+
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={page === 1}
+                            onClick={() => setPage(page - 1)}
+                        >
+                            Prev
+                        </Button>
+
+                        <span className="text-sm font-medium text-gray-600">
+                            {page} / {totalPages}
+                        </span>
+
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={page === totalPages}
+                            onClick={() => setPage(page + 1)}
+                        >
+                            Next
+                        </Button>
+
+                    </div>
+
+                </div>
+            )}
             <Sheet open={!!drawer} onOpenChange={() => setDrawer(null)}>
+
                 <SheetContent
                     side={isMobile ? "bottom" : "right"}
                     className={
                         isMobile
-                            ? "h-[88vh] rounded-t-2xl flex flex-col px-4 pt-4 pb-2"
-                            : "w-[420px] h-screen flex flex-col"
+                            ? "h-[80vh] rounded-t-2xl flex flex-col px-2 pt-4 pb-2"
+                            : "w-[32vw] h-screen flex flex-col"
                     }
                 >
+
+                    {/* HEADER */}
+
                     <SheetHeader className="shrink-0">
+
                         <SheetTitle>
-                            {drawer === "add"
-                                ? "Add Turf Rental"
-                                : drawer === "edit"
-                                    ? "Edit Turf Rental"
-                                    : "View Turf Rental"}
+
+                            {drawer === "add" && "New Booking"}
+                            {drawer === "edit" && "Edit Booking"}
+                            {drawer === "view" && "View Booking"}
+
                         </SheetTitle>
+
                     </SheetHeader>
 
-                    {/* ================= BODY ================= */}
-                    <div className="flex-1 overflow-y-auto pr-1 space-y-5 text-sm">
-                        {/* USER INFO */}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <Label>User / Group Name</Label>
+
+
+                    {/* BODY */}
+
+                    <div className="flex-1 overflow-y-auto px-2">
+
+                        <div className="grid grid-cols-2 gap-3 mt-4">
+
+                            {/* CUSTOMER NAME */}
+
+                            <div className="col-span-2">
+                                <Label>Customer Name</Label>
+
                                 <Input
-                                    disabled={drawer === "view"}
-                                    placeholder="User or Group Name"
+                                    disabled={isView}
                                     value={form.userName}
-                                    onChange={(e) => {
-                                        const name = e.target.value;
-                                        const existing = findExistingTurfUser(name);
-
-                                        if (existing) {
-                                            setForm((prev) => ({
-                                                ...prev,
-                                                userName: name,
-                                                phone: existing.phone || "",
-                                                email: existing.email || "",
-                                                address: {
-                                                    country: existing.address?.country || "India",
-                                                    state: existing.address?.state || "Maharashtra",
-                                                    city: existing.address?.city || "",
-                                                    localAddress: existing.address?.localAddress || "",
-                                                },
-                                            }));
-                                        } else {
-                                            setForm((prev) => ({
-                                                ...prev,
-                                                userName: name,
-                                            }));
-                                        }
-                                    }}
+                                    onChange={(e) => setForm({ ...form, userName: e.target.value })}
                                 />
 
                             </div>
+
+
+
+                            {/* PHONE */}
 
                             <div>
+
                                 <Label>Phone</Label>
+
                                 <Input
-                                    disabled={drawer === "view"}
-                                    placeholder="Phone Number"
+                                    disabled={isView}
                                     value={form.phone}
-                                    onChange={(e) =>
-                                        setForm({ ...form, phone: e.target.value })
-                                    }
+                                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
                                 />
+
                             </div>
+
+
 
                             {/* EMAIL */}
-                            <div className="col-span-2">
+
+                            <div>
+
                                 <Label>Email</Label>
+
                                 <Input
-                                    type="email"
-                                    placeholder="example@gmail.com"
-                                    disabled={drawer === "view"}
+                                    disabled={isView}
                                     value={form.email}
-                                    onChange={(e) =>
-                                        setForm({ ...form, email: e.target.value })
-                                    }
+                                    onChange={(e) => setForm({ ...form, email: e.target.value })}
                                 />
-                            </div>
-                        </div>
 
-
-                        {/* ADDRESS */}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <Label>City</Label>
-                                <Select
-                                    disabled={drawer === "view"}
-                                    value={form.address?.city || ""}
-                                    onValueChange={(city) =>
-                                        setForm({
-                                            ...form,
-                                            address: { ...form.address, city },
-                                        })
-                                    }
-                                >
-                                    <SelectTrigger className={selectTriggerClass}>
-                                        <SelectValue placeholder="Select City" />
-                                    </SelectTrigger>
-
-                                    <SelectContent className={selectContentClass}>
-                                        {cities.map((city) => (
-                                            <SelectItem
-                                                key={city}
-                                                value={city}
-                                                className={selectItemClass}
-                                            >
-                                                {city}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
                             </div>
 
 
+
+                            {/* FACILITY */}
+
                             <div>
-                                <Label>Local Address</Label>
-                                <Input
-                                    disabled={drawer === "view"}
-                                    value={form.address?.localAddress || ""}
-                                    onChange={(e) =>
-                                        setForm({
-                                            ...form,
-                                            address: {
-                                                ...form.address,
-                                                localAddress: e.target.value,
-                                            },
-                                        })
-                                    }
-                                />
-                            </div>
-                        </div>
 
-
-
-                        {/* Facility + Sport */}
-                        <div className="grid grid-cols-2 gap-4">
-                            {/* ================= FACILITY ================= */}
-                            <div>
                                 <Label>Facility</Label>
 
                                 <Select
-                                    disabled={drawer === "view"}
-                                    value={form.facilityId}
-                                    onValueChange={(facilityId) => {
-                                        const facility = facilities.find((f) => f._id === facilityId);
-
-                                        setForm((prev) => ({
-                                            ...prev,
-                                            facilityId,
-                                            sportId: "",
-                                            selectedSlots: [],
-                                            totalAmount: 0,
-                                        }));
-
-                                        if (form.rentalDate) {
-                                            loadSlots(
-                                                facilityId,
-                                                format(form.rentalDate, "yyyy-MM-dd")
-                                            );
-                                        }
-
-                                        setHourlyRate(facility?.hourlyRate || 0);
-                                    }}
+                                    disabled={isView}
+                                    value={form.facilityId || ""}
+                                    onValueChange={handleFacility}
                                 >
+
                                     <SelectTrigger className={selectTriggerClass}>
+
                                         <SelectValue placeholder="Select Facility" />
+
                                     </SelectTrigger>
 
-                                    <SelectContent
-                                        position="popper"
-                                        sideOffset={4}
-                                        className={selectContentClass}
-                                    >
-                                        {facilities.map((f) => (
-                                            <SelectItem
-                                                key={f._id}
-                                                value={f._id}
-                                                className={selectItemClass}
-                                            >
+                                    <SelectContent className="z-[9999] bg-white border shadow-lg">
+
+                                        {facilities.map(f => (
+                                            <SelectItem className={selectItemClass} key={f._id} value={f._id}>
                                                 {f.name}
                                             </SelectItem>
                                         ))}
+
                                     </SelectContent>
+
                                 </Select>
+
                             </div>
 
-                            {/* ================= SPORT ================= */}
+
+
+                            {/* SPORT */}
+
                             <div>
+
                                 <Label>Sport</Label>
 
                                 <Select
-                                    disabled={drawer === "view" || !form.facilityId}
-                                    value={form.sportId}
-                                    onValueChange={(sportId) =>
-                                        setForm((prev) => ({ ...prev, sportId }))
-                                    }
+                                    disabled={isView}
+                                    value={form.sportId || ""}
+                                    onValueChange={handleSport}
                                 >
+
                                     <SelectTrigger className={selectTriggerClass}>
-                                        <SelectValue
-                                            placeholder={
-                                                form.facilityId
-                                                    ? "Select Sport"
-                                                    : "Select facility first"
-                                            }
-                                        />
+
+                                        <SelectValue placeholder="Select Sport" />
+
                                     </SelectTrigger>
 
-                                    <SelectContent
-                                        position="popper"
-                                        sideOffset={4}
-                                        className={selectContentClass}
-                                    >
-                                        {allowedSports.length > 0 ? (
-                                            allowedSports.map((s) => (
-                                                <SelectItem
-                                                    key={s._id}
-                                                    value={s._id}
-                                                    className={selectItemClass}
-                                                >
-                                                    {s.name}
-                                                </SelectItem>
-                                            ))
-                                        ) : (
-                                            <div className="px-3 py-2 text-xs text-muted-foreground">
-                                                No sports available
-                                            </div>
-                                        )}
+                                    <SelectContent className="z-[9999] bg-white border shadow-lg">
+
+                                        {sports.map(s => (
+                                            <SelectItem className={selectItemClass} key={s._id} value={s._id}>
+                                                {s.name}
+                                            </SelectItem>
+                                        ))}
+
                                     </SelectContent>
+
                                 </Select>
+
                             </div>
-                        </div>
 
 
-                        {/* Date */}
-                        {/* ================= RENTAL DATE ================= */}
-                        <div>
-                            <Label>Rental Date</Label>
 
-                            <Popover
-                                open={drawer === "add" ? dateOpen : false}
-                                onOpenChange={(open) => {
-                                    if (drawer === "add") setDateOpen(open);
-                                }}
-                            >
-                                <PopoverTrigger asChild>
-                                    <Button
-                                        variant="outline"
-                                        disabled={drawer !== "add"} // 🔒 disable in edit & view
-                                        className="
-                                                        w-full h-11 justify-start text-left font-normal
-                                                        bg-white border border-gray-300
-                                                        focus:ring-2 focus:ring-green-600
-                                                        "
-                                    >
-                                        <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
-                                        {form.rentalDate
-                                            ? format(form.rentalDate, "dd MMM yyyy")
-                                            : "Pick a date"}
-                                    </Button>
-                                </PopoverTrigger>
+                            {/* DATE */}
 
-                                {drawer === "add" && (
-                                    <PopoverContent
-                                        align="start"
-                                        className="p-0 z-[9999] bg-white border shadow-lg"
-                                    >
+                            <div className="col-span-2">
+
+                                <Label>Date</Label>
+
+                                <Popover>
+
+                                    <PopoverTrigger asChild>
+
+                                        <Button
+                                            variant="outline"
+                                            className="w-full justify-start"
+                                        >
+
+                                            <CalendarIcon className="mr-2 h-4 w-4" />
+
+                                            {form.rentalDate
+                                                ? format(new Date(form.rentalDate), "PPP")
+                                                : "Select Date"}
+
+                                        </Button>
+
+                                    </PopoverTrigger>
+
+                                    <PopoverContent className="p-0">
+
                                         <Calendar
                                             mode="single"
-                                            selected={form.rentalDate}
-                                            onSelect={(d) => {
-                                                if (!d) return;
-
-                                                setForm((prev) => ({
-                                                    ...prev,
-                                                    rentalDate: d,
-                                                    selectedSlots: [],
-                                                    totalAmount: 0,
-                                                }));
-
-                                                if (form.facilityId) {
-                                                    loadSlots(
-                                                        form.facilityId,
-                                                        format(d, "yyyy-MM-dd")
-                                                    );
-                                                }
-
-                                                setDateOpen(false); // ✅ close after select
-                                            }}
-                                            initialFocus
-                                            classNames={{
-                                                day: `
-              h-9 w-9 p-0 font-normal rounded-md
-              transition-colors
-              hover:bg-green-100 hover:text-green-900
-            `,
-                                                day_selected: `
-              bg-green-600 text-white
-              hover:bg-green-600 hover:text-white
-            `,
-                                                day_today: `
-              border border-green-600
-              text-green-700 font-semibold
-            `,
-                                                day_outside: "text-muted-foreground opacity-50",
-                                                day_disabled: "text-muted-foreground opacity-30",
-                                            }}
+                                            selected={form.rentalDate ? new Date(form.rentalDate) : null}
+                                            onSelect={handleDate}
                                         />
+
                                     </PopoverContent>
-                                )}
-                            </Popover>
-                        </div>
 
-                        {/* Start Time + Duration */}
-                        <div className="grid grid-cols-1 gap-4">
-                            {slots.length > 0 && (
-                                <div className="mt-6 border rounded-xl p-5 bg-white">
+                                </Popover>
 
-                                    <h3 className="font-semibold text-green-700 mb-4">
-                                        Available Slots
-                                    </h3>
+                            </div>
 
-                                    {/* ================= MORNING ================= */}
-                                    <div className="mb-6">
-                                        <p className="text-sm text-gray-600 mb-3">
-                                            Morning (7 AM – 11 AM)
-                                        </p>
+                            {/* ================= UNAVAILABLE TIMES ================= */}
 
-                                        <div className="flex flex-wrap gap-3">
-                                            {slots
-                                                .filter((s) => Number(s.time.slice(0, 2)) < 11)
-                                                .map(renderSlot)}
-                                        </div>
+                            {form.facilityId && form.rentalDate && blockedTimes.length > 0 && (
+
+                                <div className="col-span-2 border rounded-lg p-3 bg-gray-50">
+
+                                    <p className="text-sm font-semibold mb-2">
+                                        Unavailable Slots
+                                    </p>
+
+                                    <div className="flex flex-wrap gap-2">
+
+                                        {blockedTimes.map((t, i) => {
+
+                                            let style = "bg-gray-200 text-gray-700";
+
+                                            if (t.type === "booking")
+                                                style = "bg-red-100 text-red-700";
+
+                                            if (t.type === "batch")
+                                                style = "bg-blue-100 text-blue-700";
+
+                                            if (t.type === "blocked")
+                                                style = "bg-gray-300 text-gray-800";
+
+                                            return (
+
+                                                <div
+                                                    key={i}
+                                                    className={`px-3 py-1 rounded-md text-xs font-medium ${style}`}
+                                                >
+
+                                                    {formatTime12h(t.startTime)} - {formatTime12h(t.endTime)}
+
+                                                    {t.type === "batch" && " (Batch)"}
+                                                    {t.type === "booking" && " (Booked)"}
+                                                    {t.type === "blocked" && " (Blocked)"}
+
+                                                </div>
+
+                                            )
+
+                                        })}
+
                                     </div>
 
-                                    {/* ================= EVENING ================= */}
-                                    <div>
-                                        <p className="text-sm text-gray-600 mb-3">
-                                            Evening (2 PM – 9 PM)
-                                        </p>
-
-                                        <div className="flex flex-wrap gap-3">
-                                            {slots
-                                                .filter((s) => Number(s.time.slice(0, 2)) >= 14)
-                                                .map(renderSlot)}
-                                        </div>
-                                    </div>
-
-                                    {/* ================= LEGEND ================= */}
-                                    <div className="flex flex-wrap gap-6 text-xs text-gray-600 mt-6">
-                                        <span className="flex items-center gap-2">
-                                            <span className="w-3 h-3 rounded bg-green-400" />
-                                            Available
-                                        </span>
-
-                                        <span className="flex items-center gap-2">
-                                            <span className="w-3 h-3 rounded bg-orange-400" />
-                                            Booked
-                                        </span>
-
-                                        <span className="flex items-center gap-2">
-                                            <span className="w-3 h-3 rounded bg-red-400" />
-                                            Blocked
-                                        </span>
-                                    </div>
                                 </div>
+
                             )}
-                        </div>
-                        {/* ================= PAYMENT ================= */}
-                        <div className="grid grid-cols-2 gap-4">
-                            {/* PAYMENT STATUS */}
+
+                            {/* START TIME */}
+
                             <div>
-                                <Label>Payment Status</Label>
+
+                                <Label>Start Time</Label>
+
+                                <Input
+                                    type="time"
+                                    step="60"
+                                    disabled={isView}
+                                    value={form.startTime}
+                                    onChange={(e) => {
+
+                                        const value = e.target.value;
+
+                                        if (isTimeConflicting(value, form.endTime, blockedTimes)) {
+
+                                            toast({
+                                                title: "Time Conflict",
+                                                description: "This slot is already booked or blocked",
+                                                variant: "destructive"
+                                            });
+
+                                            return;
+                                        }
+
+                                        setForm({ ...form, startTime: value });
+
+                                    }}
+                                />
+
+                            </div>
+
+
+                            <div>
+                                {/* END TIME */}
+                                <Label>End Time</Label>
+                                <Input
+                                    type="time"
+                                    step="60"
+                                    disabled={isView}
+                                    value={form.endTime}
+                                    onChange={(e) => {
+
+                                        const value = e.target.value;
+
+                                        if (isTimeConflicting(form.startTime, value, blockedTimes)) {
+
+                                            toast({
+                                                title: "Time Conflict",
+                                                description: "This slot is already booked or blocked",
+                                                variant: "destructive"
+                                            });
+
+                                            return;
+                                        }
+
+                                        setForm({ ...form, endTime: value });
+
+                                    }}
+                                />
+
+                            </div>
+
+                            {/* PAYMENT TYPE */}
+
+                            <div>
+
+                                <Label>Payment Type</Label>
+
                                 <Select
-                                    disabled={drawer === "view"}
-                                    value={form.paymentStatus}
-                                    onValueChange={(v) =>
-                                        setForm({ ...form, paymentStatus: v })
-                                    }
+                                    value={form.paymentType || "none"}
+                                    onValueChange={(v) => {
+
+                                        let advance = 0;
+
+                                        if (v === "advance") advance = form.requiredAdvance;
+                                        if (v === "full") advance = form.finalAmount;
+
+                                        setForm({
+                                            ...form,
+                                            paymentType: v,
+                                            paymentMode: v === "none" ? "" : "cash",
+                                            advanceAmount: advance,
+                                            remainingAmount: form.finalAmount - advance
+                                        });
+
+                                    }}
                                 >
+
                                     <SelectTrigger className={selectTriggerClass}>
-                                        <SelectValue placeholder="Select status" />
+
+                                        <SelectValue />
+
                                     </SelectTrigger>
 
-                                    <SelectContent
-                                        position="popper"
-                                        sideOffset={4}
-                                        className={selectContentClass}
-                                    >
-                                        <SelectItem value="paid" className={selectItemClass}>
-                                            Paid
-                                        </SelectItem>
-                                        <SelectItem value="pending" className={selectItemClass}>
-                                            Pending
-                                        </SelectItem>
+                                    <SelectContent className="z-[9999] bg-white border shadow-lg">
+
+                                        <SelectItem className={selectItemClass} value="none">No Payment</SelectItem>
+                                        <SelectItem className={selectItemClass} value="advance">Advance</SelectItem>
+                                        <SelectItem className={selectItemClass} value="full">Full</SelectItem>
+
                                     </SelectContent>
+
                                 </Select>
+
                             </div>
 
-                            {/* PAYMENT METHOD */}
-                            <div>
-                                <Label>Payment Method</Label>
 
-                                <Select
-                                    disabled={drawer === "view"}
-                                    value={form.paymentMode}
-                                    onValueChange={(v) =>
-                                        setForm({ ...form, paymentMode: v })
-                                    }
-                                >
-                                    <SelectTrigger className={selectTriggerClass}>
-                                        <SelectValue placeholder="Select method" />
-                                    </SelectTrigger>
 
-                                    <SelectContent
-                                        position="popper"
-                                        sideOffset={4}
-                                        className={selectContentClass}
+                            {/* PAYMENT MODE */}
+
+                            {form.paymentType !== "none" && (
+
+                                <div>
+
+                                    <Label>Payment Mode</Label>
+
+                                    <Select
+                                        value={form.paymentMode || "cash"}
+                                        onValueChange={(v) => setForm({ ...form, paymentMode: v })}
                                     >
-                                        <SelectItem value="cash" className={selectItemClass}>
-                                            Cash
-                                        </SelectItem>
-                                        <SelectItem value="upi" className={selectItemClass}>
-                                            UPI
-                                        </SelectItem>
-                                        <SelectItem value="razorpay" className={selectItemClass}>Razorpay</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
 
-                        {/* ================= DISCOUNT ================= */}
-                        <div className="space-y-3 border-t pt-4">
-                            <Label>Apply Discount</Label>
-                            <Select
-                                disabled={drawer === "view"}
-                                value={discountCode}
-                                onValueChange={(code) => setDiscountCode(code)}
-                            >
-                                <SelectTrigger className={selectTriggerClass}>
-                                    <SelectValue placeholder="Select Discount (optional)" />
-                                </SelectTrigger>
+                                        <SelectTrigger className={selectTriggerClass}>
 
-                                <SelectContent className={selectContentClass}>
-                                    <SelectItem value="none" className={selectItemClass}>
-                                        No Discount
-                                    </SelectItem>
-                                    {availableDiscounts.map((d) => (
-                                        <SelectItem
-                                            key={d._id}
-                                            value={d.code}
-                                            className={selectItemClass}
-                                        >
-                                            {d.code} — {d.type === "percentage"
-                                                ? `${d.value}%`
-                                                : `₹${d.value}`}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            {/* Show applied discount */}
-                            {form.totalDiscountAmount > 0 && (
-                                <div className="text-sm text-green-600">
-                                    Discount Applied: ₹{form.totalDiscountAmount}
+                                            <SelectValue />
+
+                                        </SelectTrigger>
+
+                                        <SelectContent className="z-[9999] bg-white border shadow-lg">
+
+                                            <SelectItem className={selectItemClass} value="cash">Cash</SelectItem>
+                                            <SelectItem className={selectItemClass} value="upi">UPI</SelectItem>
+                                            <SelectItem className={selectItemClass} value="razorpay">Razorpay</SelectItem>
+
+                                        </SelectContent>
+
+                                    </Select>
+
                                 </div>
+
                             )}
-                        </div>
-                        {/* ================= AMOUNT BREAKDOWN ================= */}
-                        <div className="space-y-2">
-                            <div className="flex justify-between text-sm">
-                                <span>Base Amount</span>
-                                <span>₹{form.baseAmount || 0}</span>
+
+
+
+                            {/* SUMMARY */}
+
+                            <div className="col-span-2 border rounded-lg p-3 bg-gray-50 text-sm space-y-1">
+
+                                <div className="flex justify-between">
+                                    <span>Total</span>
+                                    <span>₹ {form.finalAmount || 0}</span>
+                                </div>
+
+                                <div className="flex justify-between">
+                                    <span>Advance</span>
+                                    <span>₹ {form.advanceAmount || 0}</span>
+                                </div>
+
+                                <div className="flex justify-between font-semibold">
+                                    <span>Remaining</span>
+                                    <span>₹ {(form.finalAmount || 0) - (form.advanceAmount || 0)}</span>
+                                </div>
+
                             </div>
-                            <div className="flex justify-between text-sm text-green-600">
-                                <span>Discount</span>
-                                <span>- ₹{form.totalDiscountAmount || 0}</span>
-                            </div>
-                            <div className="flex justify-between font-semibold text-lg text-green-700 border-t pt-2">
-                                <span>Final Amount</span>
-                                <span>₹{form.finalAmount || 0}</span>
-                            </div>
+
+                            {/* ================= PAYMENT HISTORY ================= */}
+
+                            {isView && selected?.payments?.length > 0 && (() => {
+
+                                const totalPaid = selected.payments.reduce(
+                                    (sum, p) => sum + Number(p.amount || 0),
+                                    0
+                                );
+
+                                return (
+
+                                    <div className="col-span-2 border rounded-lg p-3 bg-white">
+
+                                        {/* HEADER */}
+
+                                        <div className="flex justify-between items-center mb-3">
+
+                                            <p className="font-semibold text-sm">
+                                                Payment History
+                                            </p>
+
+                                            <p className="text-sm font-semibold text-green-700">
+                                                ₹ {totalPaid} Paid
+                                            </p>
+
+                                        </div>
+
+
+                                        {/* PAYMENTS */}
+
+                                        <div className="space-y-2">
+
+                                            {selected.payments.map((p, i) => {
+
+                                                const date = p.createdAt
+                                                    ? new Date(p.createdAt).toLocaleDateString("en-IN")
+                                                    : "";
+
+                                                const time = p.createdAt
+                                                    ? new Date(p.createdAt).toLocaleTimeString("en-IN", {
+                                                        hour: "2-digit",
+                                                        minute: "2-digit"
+                                                    })
+                                                    : "";
+
+                                                return (
+
+                                                    <div
+                                                        key={p._id}
+                                                        className="flex flex-col md:flex-row md:items-center md:justify-between border rounded-md px-3 py-2 text-sm"
+                                                    >
+
+                                                        {/* LEFT */}
+
+                                                        <div className="flex flex-col">
+
+                                                            <span className="font-medium">
+                                                                {p.payerName || "Customer"}
+                                                            </span>
+
+                                                            <span className="text-xs text-gray-500 capitalize">
+
+                                                                {p.paymentType === "advance" && "Advance"}
+                                                                {p.paymentType === "balance" && "Due Payment"}
+                                                                {p.paymentType === "full" && "Full Payment"}
+
+                                                                {" • "} {p.mode}
+
+                                                                {date && ` • ${date}`}
+                                                                {time && ` ${time}`}
+
+                                                            </span>
+
+                                                        </div>
+
+                                                        {/* AMOUNT */}
+
+                                                        <span className="font-semibold text-green-700 mt-1 md:mt-0">
+                                                            ₹ {p.amount}
+                                                        </span>
+
+                                                    </div>
+
+                                                );
+
+                                            })}
+
+                                        </div>
+
+                                    </div>
+
+                                );
+
+                            })()}
+                            {/* ================= REFUND STATUS ================= */}
+
+                            {isView && selected?.bookingStatus === "cancelled" && (
+
+                                <div className="col-span-2 border rounded-lg p-3 bg-red-50 text-sm space-y-1">
+
+                                    <p className="font-semibold text-red-700">
+                                        Booking Cancelled
+                                    </p>
+
+                                    <p className="text-xs text-gray-600">
+                                        Cancelled by: {selected.cancellationSource || "system"}
+                                    </p>
+
+                                    {selected.cancelledAt && (
+
+                                        <p className="text-xs text-gray-600">
+                                            On {new Date(selected.cancelledAt).toLocaleDateString("en-IN")} •
+                                            {new Date(selected.cancelledAt).toLocaleTimeString("en-IN", {
+                                                hour: "2-digit",
+                                                minute: "2-digit"
+                                            })}
+                                        </p>
+
+                                    )}
+
+                                    {selected.refundStatus === "pending" && (
+
+                                        <p className="text-orange-600 mt-1 font-medium">
+                                            Refund Pending Approval ₹{selected.refundAmount}
+                                        </p>
+
+                                    )}
+
+                                    {selected.refundStatus === "approved" && (
+
+                                        <p className="text-green-600 mt-1 font-medium">
+                                            Refund Approved ₹{selected.refundAmount}
+                                        </p>
+
+                                    )}
+
+                                </div>
+
+                            )}
+
                         </div>
                     </div>
 
-                    {/* Footer */}
-                    {drawer !== "view" && (
-                        <div className="mt-3">
-                            <Button
-                                className="w-full bg-green-700 hover:bg-green-800"
-                                onClick={saveRental}
-                            >
-                                {drawer === "add" ? "Add Rental" : "Update Rental"}
-                            </Button>
-                        </div>
+                    {/* FOOTER BUTTON */}
+
+                    {!isView && (
+
+                        <Button
+                            className="mt-2 w-full bg-green-700"
+                            onClick={saveRental}
+                        >
+
+                            {drawer === "add" ? "Create Booking" : "Update Booking"}
+
+                        </Button>
+
                     )}
+
                 </SheetContent>
+
             </Sheet>
 
-            <Sheet open={mobileFilterOpen} onOpenChange={setMobileFilterOpen}>
-                <SheetContent
-                    side="bottom"
-                    className="h-[50vh] rounded-t-2xl p-4"
-                >
-                    <h2 className="text-lg font-semibold mb-4">Filters</h2>
+            {/* ================= REFUND APPROVAL ================= */}
 
-                    <div className="space-y-4">
+            {refundBooking && (
 
-                        {/* SPORT */}
-                        <Select
-                            value={tempFilters.sport}
-                            onValueChange={(v) =>
-                                setTempFilters((p) => ({ ...p, sport: v }))
-                            }
+                isMobile ? (
+
+                    <Sheet open onOpenChange={() => setRefundBooking(null)}>
+
+                        <SheetContent
+                            side="bottom"
+                            className="h-[70vh] rounded-t-2xl overflow-y-auto"
                         >
-                            <SelectTrigger className={filterTriggerClass}>
-                                <SelectValue placeholder="All Sports" />
-                            </SelectTrigger>
-                            <SelectContent className="z-[9999] bg-white border shadow-lg">
-                                <SelectItem value="all" className={filterItemClass}>
-                                    All Sports
-                                </SelectItem>
-                                {sports.map((s) => (
-                                    <SelectItem key={s._id} value={s._id} className={filterItemClass}>
-                                        {s.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
 
-                        {/* FACILITY */}
-                        <Select
-                            value={tempFilters.facility}
-                            onValueChange={(v) =>
-                                setTempFilters((p) => ({ ...p, facility: v }))
-                            }
-                        >
-                            <SelectTrigger className={filterTriggerClass}>
-                                <SelectValue placeholder="All Facilities" />
-                            </SelectTrigger>
-                            <SelectContent className="z-[9999] bg-white border shadow-lg">
-                                <SelectItem value="all" className={filterItemClass}>
-                                    All Facilities
-                                </SelectItem>
-                                {facilities.map((f) => (
-                                    <SelectItem key={f._id} value={f._id} className={filterItemClass}>
-                                        {f.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                            <div className="p-4 space-y-4">
 
-                        {/* STATUS */}
-                        <Select
-                            value={tempFilters.status}
-                            onValueChange={(v) =>
-                                setTempFilters((p) => ({ ...p, status: v }))
-                            }
-                        >
-                            <SelectTrigger className={filterTriggerClass}>
-                                <SelectValue placeholder="All Status" />
-                            </SelectTrigger>
-                            <SelectContent className="z-[9999] bg-white border shadow-lg">
-                                <SelectItem value="all" className={filterItemClass}>
-                                    All Status
-                                </SelectItem>
-                                <SelectItem value="paid" className={filterItemClass}>
-                                    Paid
-                                </SelectItem>
-                                <SelectItem value="pending" className={filterItemClass}>
-                                    Pending
-                                </SelectItem>
-                            </SelectContent>
-                        </Select>
+                                <h2 className="text-lg font-semibold text-green-800">
+                                    Approve Refund
+                                </h2>
+
+                                <div className="text-sm space-y-2">
+
+                                    <p>
+                                        <span className="font-medium">Customer:</span>{" "}
+                                        {refundBooking.userName}
+                                    </p>
+
+                                    <p>
+                                        <span className="font-medium">Facility:</span>{" "}
+                                        {refundBooking.facilityName}
+                                    </p>
+
+                                    <p>
+                                        <span className="font-medium">Date:</span>{" "}
+                                        {refundBooking.rentalDate}
+                                    </p>
+
+                                    <p>
+                                        <span className="font-medium">Time:</span>{" "}
+                                        {formatTime12h(refundBooking.startTime)} -{" "}
+                                        {formatTime12h(refundBooking.endTime)}
+                                    </p>
+
+                                </div>
+
+                                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-sm">
+
+                                    Refund Amount
+
+                                    <span className="font-semibold text-orange-600 ml-2">
+                                        ₹ {refundBooking.refundAmount}
+                                    </span>
+
+                                </div>
+
+                                <p className="text-xs text-gray-500">
+                                    This action will approve the refund for the customer.
+                                </p>
+
+                                <div className="flex gap-3 pt-2">
+
+                                    <Button
+                                        variant="outline"
+                                        className="w-full"
+                                        onClick={() => setRefundBooking(null)}
+                                    >
+                                        Cancel
+                                    </Button>
+
+                                    <Button
+                                        className="w-full bg-green-700 hover:bg-green-800"
+                                        onClick={approveRefund}
+                                    >
+                                        Approve Refund
+                                    </Button>
+
+                                </div>
+
+                            </div>
+
+                        </SheetContent>
+
+                    </Sheet>
+
+                ) : (
+
+                    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+
+                        <div className="bg-white rounded-xl w-full max-w-md p-5 space-y-4">
+
+                            <h2 className="text-lg font-semibold text-green-800">
+                                Approve Refund
+                            </h2>
+
+                            <div className="text-sm space-y-2">
+
+                                <p>
+                                    <span className="font-medium">Customer:</span>{" "}
+                                    {refundBooking.userName}
+                                </p>
+
+                                <p>
+                                    <span className="font-medium">Facility:</span>{" "}
+                                    {refundBooking.facilityName}
+                                </p>
+
+                                <p>
+                                    <span className="font-medium">Date:</span>{" "}
+                                    {refundBooking.rentalDate}
+                                </p>
+
+                                <p>
+                                    <span className="font-medium">Time:</span>{" "}
+                                    {formatTime12h(refundBooking.startTime)} -{" "}
+                                    {formatTime12h(refundBooking.endTime)}
+                                </p>
+
+                            </div>
+
+                            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-sm">
+
+                                Refund Amount
+
+                                <span className="font-semibold text-orange-600 ml-2">
+                                    ₹ {refundBooking.refundAmount}
+                                </span>
+
+                            </div>
+
+                            <p className="text-xs text-gray-500">
+                                This action will approve the refund for the customer.
+                            </p>
+
+                            <div className="flex justify-end gap-3">
+
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setRefundBooking(null)}
+                                >
+                                    Cancel
+                                </Button>
+
+                                <Button
+                                    className="bg-green-700 hover:bg-green-800"
+                                    onClick={approveRefund}
+                                >
+                                    Yes, Approve Refund
+                                </Button>
+
+                            </div>
+
+                        </div>
+
                     </div>
 
-                    {/* FOOTER */}
-                    <div className="flex gap-3 mt-6">
-                        <Button
-                            variant="outline"
-                            className="flex-1"
-                            onClick={() =>
-                                setTempFilters({
-                                    sport: "all",
-                                    facility: "all",
-                                    status: "all",
-                                })
-                            }
-                        >
-                            Clear
-                        </Button>
+                )
 
-                        <Button
-                            className="flex-1 bg-green-700"
-                            onClick={() => {
-                                setFilters(tempFilters);
-                                setMobileFilterOpen(false);
-                            }}
-                        >
-                            Apply
-                        </Button>
-                    </div>
-                </SheetContent>
-            </Sheet>
-        </div>
+            )}
+        </div >
     );
-}
-
-/* ================= SMALL COMPONENT ================= */
-function Stat({ label, value }) {
-    return (
-        <div className="bg-white border rounded-lg p-4">
-            <div className="text-xl font-semibold text-green-700">{value}</div>
-            <div className="text-gray-500">{label}</div>
-        </div>
-    );
-}
-
-function UpcomingBookings({ data }) {
-  if (!Object.keys(data).length) return null;
-
-  const labelStyles = {
-    "Live Now": "bg-blue-100 text-blue-700",
-    "Upcoming Today": "bg-green-100 text-green-700",
-    "Tomorrow": "bg-purple-100 text-indigo-700",
-  };
-
-  return (
-    <div className="bg-white border rounded-xl p-6 mb-6">
-      <h2 className="flex items-center gap-2 text-lg font-semibold mb-4">
-        <CalendarIcon className="text-green-700" size={18} />
-        Upcoming Bookings
-      </h2>
-
-      <div className="grid md:grid-cols-3 gap-4">
-        {Object.entries(data).map(([date, bookings]) => (
-          <div
-            key={date}
-            className="bg-gray-50 rounded-lg p-4 space-y-3"
-          >
-            <div className="font-semibold text-sm">
-              {format(new Date(date), "dd MMM yyyy")}
-            </div>
-
-            {bookings.map((b) => (
-              <div
-                key={b._id}
-                className="flex justify-between items-center text-sm"
-              >
-                <div>
-                  <div className="font-medium">
-                    {getSlotRange(b.slots)}
-                  </div>
-                  <div className="text-gray-500 text-xs">
-                    {b.facilityName}
-                  </div>
-                </div>
-
-                <span
-                  className={`px-3 py-1 rounded-full text-xs font-medium ${
-                    labelStyles[b.bookingLabel]
-                  }`}
-                >
-                  {b.bookingLabel}
-                </span>
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }

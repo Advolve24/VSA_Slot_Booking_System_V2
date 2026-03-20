@@ -46,12 +46,6 @@ export default function FacilitiesPage() {
           Facilities
         </button>
 
-        <button
-          className={tabClass("slots")}
-          onClick={() => setActiveTab("slots")}
-        >
-          Slot Allocation
-        </button>
 
         <button
           className={tabClass("blocked")}
@@ -72,13 +66,6 @@ export default function FacilitiesPage() {
           </button>
 
           <button
-            className={tabClass("slots")}
-            onClick={() => setActiveTab("slots")}
-          >
-            Slot Allocation
-          </button>
-
-          <button
             className={tabClass("blocked")}
             onClick={() => setActiveTab("blocked")}
           >
@@ -90,7 +77,6 @@ export default function FacilitiesPage() {
       {/* ================= TAB CONTENT ================= */}
       <div>
         {activeTab === "facilities" && <FacilityList />}
-        {activeTab === "slots" && <SlotAllocation />}
         {activeTab === "blocked" && <BlockedSlots />}
       </div>
 

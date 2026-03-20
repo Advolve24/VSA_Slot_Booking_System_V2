@@ -2,6 +2,7 @@
 import { NavLink } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { useAuth } from "../providers/AuthProvider";
+import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Users,
@@ -32,6 +33,7 @@ const menu = [
 ];
 
 export default function Sidebar() {
+  const navigate = useNavigate();
   const { logout, admin } = useAuth();
 
   const [collapsed, setCollapsed] = useState(false);
@@ -52,7 +54,8 @@ export default function Sidebar() {
             <img
               src="/VSA-Logo-1.png"        
               alt="VSA Logo"
-              className="w-full h-full object-contain"
+              className="w-full h-full object-contain cursor-pointer"
+                onClick={() => navigate("/admin")}
             />
           </div>
 
@@ -144,7 +147,7 @@ export default function Sidebar() {
             }}
             className={`
               w-full flex items-center gap-3 px-3 py-3 rounded-lg
-              text-red-200 hover:text-red-100 hover:bg-red-600/20
+              text-white hover:text-white hover:bg-green-700
               ${collapsed ? "justify-center" : ""}
             `}
           >

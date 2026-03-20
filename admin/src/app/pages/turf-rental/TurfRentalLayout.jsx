@@ -1,12 +1,12 @@
 import { NavLink, Outlet } from "react-router-dom";
 
-export default function EnrollmentsLayout() {
+export default function TurfRentalLayout() {
 
   const tabClass =
-    "px-4 py-2 text-sm font-medium rounded-md transition-colors";
+    "px-4 py-2 text-sm font-medium rounded-md transition-all duration-200";
 
   const activeClass =
-    "bg-green-700 text-white";
+    "bg-green-700 text-white shadow-sm";
 
   const inactiveClass =
     "text-gray-600 hover:bg-gray-100";
@@ -19,11 +19,11 @@ export default function EnrollmentsLayout() {
 
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-green-800">
-            Enrollment Management
+            Turf Rental Management
           </h1>
 
           <p className="text-sm sm:text-base text-muted-foreground">
-            Manage student enrollments, renewals and invoices.
+            Manage turf bookings, payments and invoices.
           </p>
         </div>
 
@@ -32,33 +32,25 @@ export default function EnrollmentsLayout() {
       {/* TABS */}
       <div className="flex gap-2 border-b pb-3">
 
-        {/* ENROLLMENTS */}
+        {/* BOOKINGS */}
         <NavLink
-          to="/admin/enrollments"
+          to="/admin/turf-rentals"
           end
           className={({ isActive }) =>
             `${tabClass} ${isActive ? activeClass : inactiveClass}`
           }
         >
-          Enrollments
+          Turf Rentals
         </NavLink>
-         
-         <NavLink
-          to="/admin/enrollments/invoices"
+
+        {/* INVOICES */}
+        <NavLink
+          to="/admin/turf-rentals/invoices"
           className={({ isActive }) =>
             `${tabClass} ${isActive ? activeClass : inactiveClass}`
           }
         >
           Invoices
-        </NavLink>
-        
-        <NavLink
-          to="/admin/enrollments/renewals"
-          className={({ isActive }) =>
-            `${tabClass} ${isActive ? activeClass : inactiveClass}`
-          }
-        >
-          Renewal History
         </NavLink>
 
       </div>

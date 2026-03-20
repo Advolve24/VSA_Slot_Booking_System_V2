@@ -7,10 +7,9 @@ import {
 } from "recharts";
 import { Card, CardContent } from "@/components/ui/card";
 
-/* ================= COLORS (VSA THEME) ================= */
 const COLORS = {
-  enrollments: "#15803d", // green-700
-  turf: "#f97316",        // orange-500
+  enrollments: "#15803d",
+  turf: "#f97316",
 };
 
 export default function Charts({ stats }) {
@@ -34,8 +33,8 @@ export default function Charts({ stats }) {
   return (
     <Card className="rounded-xl w-full">
       <CardContent className="p-4 sm:p-5 md:p-6">
-        
-        {/* HEADER */}
+
+
         <div className="mb-4">
           <h2 className="text-base sm:text-lg font-semibold text-green-700">
             Top Category
@@ -45,7 +44,7 @@ export default function Charts({ stats }) {
           </p>
         </div>
 
-        {/* RESPONSIVE CHART CONTAINER */}
+
         <div className="relative w-full h-[200px] sm:h-[290px] md:h-[250px]">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
@@ -65,7 +64,7 @@ export default function Charts({ stats }) {
             </PieChart>
           </ResponsiveContainer>
 
-          {/* CENTER TEXT */}
+
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
             <p className="text-[10px] sm:text-xs text-muted-foreground">
               Total
@@ -76,9 +75,9 @@ export default function Charts({ stats }) {
           </div>
         </div>
 
-        {/* LEGEND */}
+
         <div className="flex flex-wrap justify-center gap-4 mt-2 text-xs sm:text-sm">
-          
+
           <div className="flex items-center gap-2">
             <span
               className="w-3 h-3 rounded-full"

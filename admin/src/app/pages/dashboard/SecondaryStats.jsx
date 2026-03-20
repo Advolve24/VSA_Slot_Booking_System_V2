@@ -30,8 +30,7 @@ export default function SecondaryStats({ stats, loading }) {
           className="hover:shadow-sm transition w-full rounded-xl"
         >
           <CardContent className="flex items-start justify-between gap-3 p-4 sm:p-5 md:p-6">
-            
-            {/* LEFT CONTENT */}
+
             <div className="flex-1">
               <p className="text-xs sm:text-sm text-muted-foreground font-medium leading-tight break-words">
                 {item.title}
@@ -41,8 +40,6 @@ export default function SecondaryStats({ stats, loading }) {
                 {loading ? "—" : item.value}
               </h2>
             </div>
-
-            {/* RIGHT ICON */}
             <div className="flex-shrink-0">
               <item.icon className="w-5 h-5 sm:w-6 sm:h-6 text-muted-foreground" />
             </div>
