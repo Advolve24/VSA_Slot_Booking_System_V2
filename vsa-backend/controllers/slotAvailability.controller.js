@@ -1,105 +1,129 @@
 const TurfRental = require("../models/TurfRental");
-const BlockedSlot = require("../models/BlockedSlot");
-const FacilitySlot = require("../models/FacilitySlot");
+const Batch = require("../models/Batch");
 const Facility = require("../models/Facility");
+const BlockedTime = require("../models/BlockedTime");
 
-/* ======================================================
-   GET FACILITY SLOTS (USER / ADMIN / BOOKING SIDE)
-   GET /api/turf-rentals/facilities/:id/slots?date=YYYY-MM-DD
-====================================================== */
-exports.getFacilitySlots = async (req, res) => {
+/* ================= GET UNAVAILABLE TIMES ================= */
+
+exports.getFacilityUnavailableTimes = async (req, res) => {
+
   try {
+
     const { id: facilityId } = req.params;
     const { date } = req.query;
 
     if (!facilityId || !date) {
       return res.status(400).json({
-        message: "facilityId and date are required",
+        message: "facilityId and date are required"
       });
     }
 
-    /* 1️⃣ FACILITY CHECK */
+    /* ================= FACILITY ================= */
+
     const facility = await Facility.findById(facilityId);
+
     if (!facility) {
-      return res.status(404).json({ message: "Facility not found" });
+      return res.status(404).json({
+        message: "Facility not found"
+      });
     }
 
-    /* 2️⃣ SLOT DEFINITIONS */
-    const slotDoc = await FacilitySlot.findOne({ facilityId });
-
-    if (!slotDoc || !slotDoc.slots?.length) {
+    if (["maintenance", "disabled"].includes(facility.status)) {
       return res.json([]);
     }
 
-    /* 🚫 FACILITY INACTIVE */
-    if (["maintenance", "disabled"].includes(facility.status)) {
-      return res.json(
-        slotDoc.slots
-          .filter((s) => s.isActive)
-          .map((s) => ({
-            time: s.startTime,
-            label: s.label || s.startTime,
-            status: "blocked",
-          }))
-      );
-    }
+    const result = [];
 
-    /* 3️⃣ ADMIN BLOCKED SLOTS */
-    const blockedDoc = await BlockedSlot.findOne({
-      facilityId,
-      date,
-    });
+    const selectedDate = new Date(date);
+    const dow = selectedDate.getDay(); // 0=Sun ... 6=Sat
 
-    const blockedSet = new Set(
-      blockedDoc?.slots?.map((s) => s.startTime) || []
-    );
+    /* ================= TURF BOOKINGS ================= */
 
-    /* 4️⃣ BOOKINGS FOR DATE (🔥 SLOT BASED) */
     const bookings = await TurfRental.find({
       facilityId,
       rentalDate: date,
-      bookingStatus: { $ne: "cancelled" },
-    }).select("slots");
+      bookingStatus: { $ne: "cancelled" }
+    }).select("startTime endTime");
 
-    const bookedSet = new Set(
-      bookings.flatMap((b) => b.slots || [])
-    );
+    bookings.forEach(b => {
 
-    /* 5️⃣ BUILD FINAL SLOT LIST */
-    const result = slotDoc.slots
-      .filter((s) => s.isActive)
-      .map((slot) => {
-        const time = slot.startTime;
-
-        /* 🔴 BLOCKED */
-        if (blockedSet.has(time)) {
-          return {
-            time,
-            label: slot.label || time,
-            status: "blocked",
-          };
-        }
-
-        /* 🟠 BOOKED */
-        if (bookedSet.has(time)) {
-          return {
-            time,
-            label: slot.label || time,
-            status: "booked",
-          };
-        }
-
-        /* 🟢 AVAILABLE */
-        return {
-          time,
-          label: slot.label || time,
-          status: "available",
-        };
+      result.push({
+        startTime: b.startTime,
+        endTime: b.endTime,
+        type: "booking",
+        source: "turfRental"
       });
 
-    res.json(result);
+    });
+
+    /* ================= COACHING BATCHES ================= */
+
+    const batches = await Batch.find({
+      facilityId,
+      isActive: true
+    }).select("startTime endTime daysOfWeek name");
+
+    batches.forEach(batch => {
+
+      /* Only block slot if batch runs on this day */
+
+      if (batch.daysOfWeek?.includes(dow)) {
+
+        result.push({
+          startTime: batch.startTime,
+          endTime: batch.endTime,
+          type: "batch",
+          batchName: batch.name,
+          source: "coaching"
+        });
+
+      }
+
+    });
+
+    /* ================= ADMIN BLOCKED TIMES ================= */
+
+    const blocked = await BlockedTime.find({
+      facilityId,
+      date
+    }).select("startTime endTime reason");
+
+    blocked.forEach(b => {
+
+      result.push({
+        startTime: b.startTime,
+        endTime: b.endTime,
+        type: "blocked",
+        reason: b.reason || "Admin blocked",
+        source: "admin"
+      });
+
+    });
+
+    /* ================= SORT TIMES ================= */
+
+    result.sort((a, b) => {
+
+      const aTime = a.startTime.split(":").map(Number);
+      const bTime = b.startTime.split(":").map(Number);
+
+      const aMinutes = aTime[0] * 60 + aTime[1];
+      const bMinutes = bTime[0] * 60 + bTime[1];
+
+      return aMinutes - bMinutes;
+
+    });
+
+    return res.json(result);
+
   } catch (err) {
-    console.error("Slot Availability Error:", err);
-    res.status(500).json({ message: "Server error" });
+
+    console.error("Unavailable Time Error:", err);
+
+    res.status(500).json({
+      message: "Server error"
+    });
+
   }
+
 };

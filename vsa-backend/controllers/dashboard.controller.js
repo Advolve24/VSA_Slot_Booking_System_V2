@@ -1,9 +1,11 @@
 const Enrollment = require("../models/Enrollment");
 const TurfRental = require("../models/TurfRental");
 const Facility = require("../models/Facility");
+const Payment = require("../models/Payment");
 
 exports.adminDashboard = async (req, res) => {
   try {
+
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Admin only" });
     }
@@ -21,149 +23,170 @@ exports.adminDashboard = async (req, res) => {
     /* ======================================================
        COUNTS
     ====================================================== */
+
     const [
       totalEnrollments,
       activeEnrollments,
       todaysTurfRentals,
       totalTurfRentals,
-      facilities,
+      facilities
     ] = await Promise.all([
       Enrollment.countDocuments(),
       Enrollment.countDocuments({ status: "active" }),
-      TurfRental.countDocuments({ rentalDate: today }),
-      TurfRental.countDocuments(),
-      Facility.find().lean(),
+      TurfRental.countDocuments({
+        rentalDate: today,
+        bookingStatus: { $ne: "cancelled" }
+      }),
+      TurfRental.countDocuments({
+        bookingStatus: { $ne: "cancelled" }
+      }),
+      Facility.find().lean()
     ]);
 
     /* ======================================================
-       TOTAL + MONTHLY REVENUE (USING finalAmount ✅)
+       ENROLLMENT REVENUE
     ====================================================== */
 
     const [
       enrollmentTotal,
-      enrollmentMonthly,
-      turfTotal,
-      turfMonthly,
+      enrollmentMonthly
     ] = await Promise.all([
+
       Enrollment.aggregate([
         { $match: { paymentStatus: "paid" } },
-        { $group: { _id: null, total: { $sum: "$finalAmount" } } },
+        { $group: { _id: null, total: { $sum: "$finalAmount" } } }
       ]),
+
       Enrollment.aggregate([
         {
           $match: {
             paymentStatus: "paid",
-            createdAt: { $gte: monthStart, $lte: monthEnd },
-          },
+            createdAt: { $gte: monthStart, $lte: monthEnd }
+          }
         },
-        { $group: { _id: null, total: { $sum: "$finalAmount" } } },
-      ]),
-      TurfRental.aggregate([
-        { $match: { paymentStatus: "paid" } },
-        { $group: { _id: null, total: { $sum: "$finalAmount" } } },
-      ]),
-      TurfRental.aggregate([
-        {
-          $match: {
-            paymentStatus: "paid",
-            rentalDate: {
-              $gte: monthStart.toISOString().slice(0, 10),
-              $lte: monthEnd.toISOString().slice(0, 10),
-            },
-          },
-        },
-        { $group: { _id: null, total: { $sum: "$finalAmount" } } },
-      ]),
+        { $group: { _id: null, total: { $sum: "$finalAmount" } } }
+      ])
     ]);
 
     const totalEnrollmentRevenue = enrollmentTotal[0]?.total || 0;
     const monthlyEnrollmentRevenue = enrollmentMonthly[0]?.total || 0;
+
+    /* ======================================================
+       TURF REVENUE (FROM PAYMENTS COLLECTION)
+    ====================================================== */
+
+    const [
+      turfTotal,
+      turfMonthly
+    ] = await Promise.all([
+
+      Payment.aggregate([
+        {
+          $match: {
+            purpose: "turf",
+            status: "paid"
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$amount" }
+          }
+        }
+      ]),
+
+      Payment.aggregate([
+        {
+          $match: {
+            purpose: "turf",
+            status: "paid",
+            createdAt: { $gte: monthStart, $lte: monthEnd }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$amount" }
+          }
+        }
+      ])
+    ]);
+
     const totalTurfRevenue = turfTotal[0]?.total || 0;
     const monthlyTurfRevenue = turfMonthly[0]?.total || 0;
 
     /* ======================================================
-       MONTHLY REVENUE SERIES (BAR CHART)
+       MONTHLY REVENUE SERIES
     ====================================================== */
 
     const months = [
-      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+      "Jan","Feb","Mar","Apr","May","Jun",
+      "Jul","Aug","Sep","Oct","Nov","Dec"
     ];
 
     const revenueSeries = await Promise.all(
       months.map(async (label, i) => {
+
         const start = new Date(year, i, 1);
         const end = new Date(year, i + 1, 0);
 
         const [e, t] = await Promise.all([
+
           Enrollment.aggregate([
             {
               $match: {
                 paymentStatus: "paid",
-                createdAt: { $gte: start, $lte: end },
-              },
+                createdAt: { $gte: start, $lte: end }
+              }
             },
-            { $group: { _id: null, total: { $sum: "$finalAmount" } } },
+            {
+              $group: {
+                _id: null,
+                total: { $sum: "$finalAmount" }
+              }
+            }
           ]),
-          TurfRental.aggregate([
+
+          Payment.aggregate([
             {
               $match: {
-                paymentStatus: "paid",
-                rentalDate: {
-                  $gte: start.toISOString().slice(0, 10),
-                  $lte: end.toISOString().slice(0, 10),
-                },
-              },
+                purpose: "turf",
+                status: "paid",
+                createdAt: { $gte: start, $lte: end }
+              }
             },
-            { $group: { _id: null, total: { $sum: "$finalAmount" } } },
-          ]),
+            {
+              $group: {
+                _id: null,
+                total: { $sum: "$amount" }
+              }
+            }
+          ])
         ]);
 
         return {
           month: label,
           coaching: e[0]?.total || 0,
-          turf: t[0]?.total || 0,
+          turf: t[0]?.total || 0
         };
+
       })
     );
+
     /* ======================================================
-   UPCOMING SLOTS (NEXT 3 DAYS)
-====================================================== */
+       UPCOMING TURF BOOKINGS
+    ====================================================== */
 
-    const formatTime12h = (time) => {
-      if (!time) return "";
-
-      const [h, m] = time.split(":").map(Number);
-      const hour12 = h % 12 || 12;
-      const suffix = h >= 12 ? "PM" : "AM";
-
-      return m === 0
-        ? `${hour12} ${suffix}`
-        : `${hour12}:${m.toString().padStart(2, "0")} ${suffix}`;
-    };
-
-    const upcomingRaw = await TurfRental.find({
+    const upcomingSlots = await TurfRental.find({
       rentalDate: {
         $gte: today,
-        $lte: upcomingEnd.toISOString().slice(0, 10),
+        $lte: upcomingEnd.toISOString().slice(0, 10)
       },
-      bookingStatus: { $ne: "cancelled" },
+      bookingStatus: { $ne: "cancelled" }
     })
       .sort({ rentalDate: 1 })
       .limit(10)
       .lean();
-
-    /* Format Slots */
-
-    const upcomingSlots = upcomingRaw.map((r) => {
-      const firstSlot = r.slots?.[0] || null;
-
-      return {
-        ...r,
-        formattedTime: firstSlot ? formatTime12h(firstSlot) : "",
-      };
-    });
-
 
     /* ======================================================
        FACILITY UTILIZATION
@@ -173,9 +196,10 @@ exports.adminDashboard = async (req, res) => {
 
     const facilityUtilization = await Promise.all(
       facilities.map(async (f) => {
+
         const bookings = await TurfRental.countDocuments({
           facilityId: f._id,
-          bookingStatus: { $ne: "cancelled" },
+          bookingStatus: { $ne: "cancelled" }
         });
 
         const utilization = Math.min(
@@ -186,16 +210,19 @@ exports.adminDashboard = async (req, res) => {
         return {
           facilityId: f._id,
           name: f.name,
-          utilization,
+          utilization
         };
+
       })
     );
 
     const turfUtilization = facilityUtilization.length
       ? Math.round(
-        facilityUtilization.reduce((s, f) => s + f.utilization, 0) /
-        facilityUtilization.length
-      )
+          facilityUtilization.reduce(
+            (s, f) => s + f.utilization,
+            0
+          ) / facilityUtilization.length
+        )
       : 0;
 
     /* ======================================================
@@ -203,8 +230,10 @@ exports.adminDashboard = async (req, res) => {
     ====================================================== */
 
     res.json({
+
       totalEnrollments,
       activeEnrollments,
+
       todaysTurfRentals,
       totalTurfRentals,
 
@@ -213,21 +242,30 @@ exports.adminDashboard = async (req, res) => {
 
       monthlyRevenueBreakup: {
         coaching: monthlyEnrollmentRevenue,
-        turf: monthlyTurfRevenue,
+        turf: monthlyTurfRevenue
       },
 
       totalRevenue:
         totalEnrollmentRevenue + totalTurfRevenue,
 
       revenueSeries,
+
       upcomingSlots,
 
       turfUtilization,
-      facilityUtilization,
+      facilityUtilization
+
     });
 
-  } catch (err) {
+  }
+
+  catch (err) {
+
     console.error("Admin dashboard error:", err);
-    res.status(500).json({ message: "Admin dashboard error" });
+
+    res.status(500).json({
+      message: "Admin dashboard error"
+    });
+
   }
 };

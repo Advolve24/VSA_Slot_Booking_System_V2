@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-
+const { getFacilityUnavailableTimes } = require("../controllers/slotAvailability.controller");
 const {
   createFacility,
   getFacilities,
@@ -9,21 +9,14 @@ const {
   deleteFacility,
 } = require("../controllers/facility.controller");
 
-const { getFacilitySlots } = require("../controllers/slotAvailability.controller");
 
-
-const upload = require("../middleware/upload");
-
-/* ======================================================
-   PUBLIC ROUTES (USER + ADMIN)
-====================================================== */
+/* PUBLIC */
 router.get("/", getFacilities);
 router.get("/:id", getFacilityById);
-router.get("/:id/slots", getFacilitySlots);
+router.get("/:id/unavailable", getFacilityUnavailableTimes);
 
-/* ======================================================
-   ADMIN ROUTES
-====================================================== */
+
+/* ADMIN */
 router.post("/", createFacility);
 router.put("/:id", updateFacility);
 router.delete("/:id", deleteFacility);

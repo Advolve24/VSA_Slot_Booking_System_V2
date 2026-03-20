@@ -1,41 +1,18 @@
 const express = require("express");
 const router = express.Router();
+
 const {
-  getEnrollmentInvoice,
-  getTurfInvoice,
-  downloadEnrollmentInvoicePDF,
-  downloadTurfInvoicePDF,
+  getInvoices,
+  getInvoiceById,
+  downloadInvoicePDF,
 } = require("../controllers/invoice.controller");
 
 const authRequired = require("../middleware/auth");
 
+router.get("/", authRequired, getInvoices);
 
-/* ================= ENROLLMENT ================= */
+router.get("/:id", authRequired, getInvoiceById);
 
-router.get(
-  "/enrollment/:id",
-  authRequired,
-  getEnrollmentInvoice
-);
-
-router.get(
-  "/enrollment/:id/download",
-  authRequired,
-  downloadEnrollmentInvoicePDF
-);
-
-/* ================= TURF ================= */
-
-router.get(
-  "/turf/:id",
-  authRequired,
-  getTurfInvoice
-);
-
-router.get(
-  "/turf/:id/download",
-  authRequired,
-  downloadTurfInvoicePDF
-);
+router.get("/:id/download", authRequired, downloadInvoicePDF);
 
 module.exports = router;

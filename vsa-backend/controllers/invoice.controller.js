@@ -1,5 +1,7 @@
+const Invoice = require("../models/Invoice");
 const Enrollment = require("../models/Enrollment");
 const TurfRental = require("../models/TurfRental");
+
 const puppeteer = require("puppeteer");
 const chromium = require("@sparticuz/chromium");
 const { format } = require("date-fns");
@@ -7,15 +9,14 @@ const fs = require("fs");
 const path = require("path");
 
 /* ============================================================
-   ENV DETECTION
+ENV DETECTION
 ============================================================ */
 
 const isProduction =
-  process.env.NODE_ENV === "production" ||
-  !!process.env.VERCEL;
+  process.env.NODE_ENV === "production" || !!process.env.VERCEL;
 
 /* ============================================================
-   BROWSER LAUNCH
+BROWSER LAUNCH
 ============================================================ */
 
 const launchBrowser = async () => {
@@ -27,13 +28,11 @@ const launchBrowser = async () => {
     });
   }
 
-  return await puppeteer.launch({
-    headless: true,
-  });
+  return await puppeteer.launch({ headless: true });
 };
 
 /* ============================================================
-   LOAD LOGO
+LOAD LOGO
 ============================================================ */
 
 const logoBase64 = fs.readFileSync(
@@ -43,300 +42,178 @@ const logoBase64 = fs.readFileSync(
 
 const logoSrc = `data:image/png;base64,${logoBase64}`;
 
-/* ============================================================
-   HELPERS
-============================================================ */
-
-const generateInvoiceNo = (id, prefix) =>
-  `${prefix}-${id.toString().slice(-6).toUpperCase()}`;
-
 const formatDate = (d) =>
   d ? format(new Date(d), "dd MMM yyyy") : "-";
 
-const formatAddress = (address) =>
-  address
-    ? [
-        address.localAddress,
-        address.city,
-        address.state,
-        address.country,
-      ]
-        .filter(Boolean)
-        .join(", ")
-    : "";
-
 /* ============================================================
-   GET ENROLLMENT INVOICE (JSON)
+INVOICE HTML BUILDER (UPDATED)
 ============================================================ */
+const buildInvoiceHTML = ({ invoice, enrollment, rental }) => {
+  const showDiscount = invoice.discount > 0;
+  const registrationFee = enrollment?.registrationFee || 0;
 
-const getEnrollmentInvoice = async (req, res) => {
-  try {
-    const enrollment = await Enrollment.findById(req.params.id).lean();
-
-    if (!enrollment) {
-      return res.status(404).json({ message: "Enrollment not found" });
-    }
-
-    // 🔒 SECURITY CHECK
-    if (
-      String(enrollment.userId) !== String(req.user.id) &&
-      req.user.role !== "admin"
-    ) {
-      return res.status(403).json({
-        message: "You are not allowed to view this invoice",
-      });
-    }
-
-    res.json({
-      success: true,
-      type: "enrollment",
-      data: enrollment,
-    });
-
-  } catch (err) {
-    console.error("Enrollment Invoice Error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-};
-
-/* ============================================================
-   GET TURF INVOICE (JSON)
-============================================================ */
-
-const getTurfInvoice = async (req, res) => {
-  try {
-    const rental = await TurfRental.findById(req.params.id).lean();
-
-    if (!rental)
-      return res.status(404).json({ message: "Turf booking not found" });
-
-     // 🔒 SECURITY CHECK
-    if (
-      String(rental.userId) !== String(req.user.id) &&
-      req.user.role !== "admin"
-    ) {
-      return res.status(403).json({
-        message: "You are not allowed to view this invoice",
-      });
-    }
-
-
-    res.json({
-      success: true,
-      type: "turf",
-      data: rental,
-    });
-
-  } catch (err) {
-    console.error("Turf Invoice Error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-};
-
-/* ============================================================
-   COMMON INVOICE HTML BUILDER (ADMIN EXACT LAYOUT)
-============================================================ */
-
-const buildInvoiceHTML = ({
-  invoiceNo,
-  status,
-  billedTo,
-  itemDescription,
-  qty,
-  rate,
-  subTotal,
-  discount,
-  discountRows = "",
-  grandTotal,
-  paymentMode,
-  createdAt,
-}) => {
   return `
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8"/>
-
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
-*{
-  box-sizing:border-box;
+
+body {
+  font-family:'Poppins', sans-serif;
+  padding: 20px;
 }
 
-body{
-  margin:0;
-  background:#f3f4f6;
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial;
-  padding:40px;
-  color:#111827;
+.card {
+  background: #fff;
+  border-radius: 14px;
+  max-width: 1000px;
+  margin: auto;
+  border: 1px solid #e5e7eb;
 }
 
-.card{
-  background:#ffffff;
-  max-width:950px;
-  margin:auto;
-  border-radius:16px;
-  box-shadow:0 4px 20px rgba(0,0,0,0.05);
-  overflow:hidden;
+/* HEADER */
+.header {
+  display: flex;
+  justify-content: space-between;
+  padding: 24px;
+  border-bottom: 1px solid #eee;
 }
 
-/* ================= HEADER ================= */
-
-.header{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  padding:28px 32px;
-  border-bottom:1px solid #e5e7eb;
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.brand{
-  display:flex;
-  align-items:center;
-  gap:14px;
+.logo img {
+  height: 36px;
 }
 
-.brand img{
-  height:48px;
+.logo h2 {
+  font-size: 18px;
+  margin: 0;
 }
 
-.company-name{
-  font-size:20px;
-  font-weight:600;
+.invoice-title {
+  text-align: right;
 }
 
-.invoice-right{
-  text-align:right;
+.invoice-title h2 {
+  margin: 0;
 }
 
-.invoice-title{
-  font-size:24px;
-  font-weight:700;
-  letter-spacing:1px;
+.invoice-no {
+  color: #16a34a;
+  font-size: 12px;
 }
 
-.invoice-no{
-  font-size:13px;
-  color:#059669;
-  margin-top:4px;
+.badge {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #15803d;
 }
 
-.badge{
-  display:inline-block;
-  margin-top:8px;
-  padding:5px 14px;
-  border-radius:999px;
-  font-size:11px;
-  font-weight:600;
-  background:#d1fae5;
-  color:#065f46;
+/* BILL SECTION */
+.section {
+  padding: 24px;
+  border-bottom: 1px solid #eee;
 }
 
-/* ================= BILL SECTION ================= */
-
-.section{
-  padding:28px 32px;
-  border-bottom:1px solid #e5e7eb;
+.row {
+  display: flex;
+  justify-content: space-between;
 }
 
-.row{
-  display:flex;
-  justify-content:space-between;
-  gap:40px;
+.label {
+  font-size: 11px;
+  color: #6b7280;
+  margin-bottom: 6px;
 }
 
-.column{
-  width:48%;
-  font-size:14px;
+.bold {
+  font-weight: 600;
 }
 
-.section-title{
-  font-size:12px;
-  font-weight:600;
-  color:#6b7280;
-  margin-bottom:8px;
-  letter-spacing:.5px;
+/* TABLE */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
 }
 
-.column p{
-  margin:4px 0;
+thead {
+  background: #f3f4f6;
+  font-size: 12px;
+  text-transform: uppercase;
+  color: #6b7280;
 }
 
-/* ================= TABLE ================= */
-
-table{
-  width:100%;
-  border-collapse:collapse;
-  font-size:14px;
+th, td {
+  padding: 12px;
 }
 
-thead{
-  background:#f9fafb;
+td {
+  border-top: 1px solid #eee;
 }
 
-th{
-  text-align:left;
-  padding:12px;
-  font-size:12px;
-  text-transform:uppercase;
-  color:#6b7280;
-  font-weight:600;
+.right {
+  text-align: right;
 }
 
-td{
-  padding:14px 12px;
-  border-bottom:1px solid #f1f5f9;
+/* TAG */
+.tag {
+  font-size: 10px;
+  background: #dcfce7;
+  color: #16a34a;
+  padding: 3px 6px;
+  border-radius: 6px;
+  margin-left: 6px;
 }
 
-.right{
-  text-align:right;
+/* TOTALS */
+.totals {
+  width: 320px;
+  margin-left: auto;
+  margin-top: 20px;
 }
 
-/* ================= TOTALS ================= */
-
-.totals{
-  width:380px;
-  margin-left:auto;
-  margin-top:30px;
-  font-size:14px;
+.totals div {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
 }
 
-.totals div{
-  display:flex;
-  justify-content:space-between;
-  margin-bottom:8px;
+.reg {
+  color: #2563eb;
 }
 
-.discount-row{
-  color:#dc2626;
+.discount {
+  color: #dc2626;
 }
 
-.grand{
-  font-weight:700;
-  font-size:18px;
-  color:#059669;
-  border-top:1px solid #e5e7eb;
-  padding-top:10px;
-  margin-top:10px;
+.grand {
+  border-top: 1px solid #ddd;
+  padding-top: 10px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #16a34a;
 }
 
-/* ================= PAYMENT ================= */
-
-.payment-section{
-  padding:24px 32px;
-  border-bottom:1px solid #e5e7eb;
-  font-size:14px;
+/* FOOTER */
+.footer {
+  text-align: center;
+  font-size: 12px;
+  color: #6b7280;
+  padding: 16px;
 }
 
-/* ================= FOOTER ================= */
-
-.footer{
-  text-align:center;
-  padding:20px;
-  font-size:12px;
-  color:#6b7280;
-}
 </style>
-
 </head>
 
 <body>
@@ -345,49 +222,43 @@ td{
 
   <!-- HEADER -->
   <div class="header">
-    <div class="brand">
+    <div class="logo">
       <img src="${logoSrc}" />
-      <div class="company-name">
-        Vidyanchal Sports Academy
-      </div>
+      <h2>Vidyanchal Sports Academy</h2>
     </div>
 
-    <div class="invoice-right">
-      <div class="invoice-title">INVOICE</div>
-      <div class="invoice-no">${invoiceNo}</div>
-      <div class="badge">${status}</div>
+    <div class="invoice-title">
+      <h2>INVOICE</h2>
+      <div class="invoice-no">${invoice.invoiceNo}</div>
+      <div class="badge">${invoice.status.toUpperCase()}</div>
     </div>
   </div>
 
-  <!-- BILL SECTION -->
-  <div class="section">
-    <div class="row">
-      <div class="column">
-        <div class="section-title">BILLED FROM</div>
-        <p><strong>Vidyanchal Sports Academy</strong></p>
-        <p>Vidyanchal School Sr. No. 259 Balaji Park</p>
-        <p>Baner, Pune, Maharashtra - 411007</p>
-        <p>+91 9922143210</p>
-        <p>vidyanchalsportsacademy@gmail.com</p>
-        <p>GSTIN: 29ABCDE1234F1Z5</p>
-      </div>
+  <!-- BILL -->
+  <div class="section row">
 
-      <div class="column" style="text-align:right;">
-        <div class="section-title">BILLED TO</div>
-        <p><strong>${billedTo.name}</strong></p>
-        <p>${billedTo.mobile}</p>
-        <p>${billedTo.email || ""}</p>
-        <p>${billedTo.address || ""}</p>
-        <p style="margin-top:10px;">
-          Payment Date: <strong>${formatDate(createdAt)}</strong>
-        </p>
-      </div>
+    <div>
+      <div class="label">BILLED FROM</div>
+      <div class="bold">Vidyanchal Sports Academy</div>
+      <div>Baner, Pune, Maharashtra - 411007</div>
+      <div>+91 9922143210</div>
+      <div>vidyanchalsportsacademy@gmail.com</div>
+      <div>GSTIN: 29ABCDE1234F1Z5</div>
     </div>
+
+    <div style="text-align:right">
+      <div class="label">BILLED TO</div>
+      <div class="bold">${invoice.user?.name}</div>
+      <div>${invoice.user?.mobile}</div>
+      <div>${invoice.user?.email || ""}</div>
+      <br/>
+      <div>Payment Date: <strong>${formatDate(invoice.createdAt)}</strong></div>
+    </div>
+
   </div>
 
-  <!-- ITEMS -->
+  <!-- TABLE -->
   <div class="section">
-    <div class="section-title">ITEMS & SERVICES</div>
 
     <table>
       <thead>
@@ -403,38 +274,49 @@ td{
       <tbody>
         <tr>
           <td>1</td>
-          <td>${itemDescription}</td>
-          <td class="right">${qty}</td>
-          <td class="right">₹${rate}</td>
-          <td class="right">₹${subTotal}</td>
+          <td>
+            ${invoice.itemDescription}
+            <span class="tag">${invoice.type.toUpperCase()}</span>
+          </td>
+          <td class="right">${invoice.qty || 1}</td>
+          <td class="right">₹${invoice.subTotal}</td>
+          <td class="right">₹${invoice.subTotal}</td>
         </tr>
       </tbody>
     </table>
 
+    <!-- TOTALS -->
     <div class="totals">
+
+      ${
+        registrationFee > 0
+          ? `<div class="reg"><span>Registration Fee</span><span>₹${registrationFee}</span></div>`
+          : ""
+      }
+
       <div>
         <span>Subtotal</span>
-        <span>₹${subTotal}</span>
+        <span>₹${invoice.subTotal}</span>
       </div>
 
-      ${discountRows}
-
-      <div class="discount-row">
-        <span>Total Discount</span>
-        <span>- ₹${discount}</span>
-      </div>
+      ${
+        showDiscount
+          ? `<div class="discount"><span>Discount</span><span>- ₹${invoice.discount}</span></div>`
+          : ""
+      }
 
       <div class="grand">
         <span>Grand Total</span>
-        <span>₹${grandTotal}</span>
+        <span>₹${invoice.total}</span>
       </div>
+
     </div>
+
   </div>
 
-  <!-- PAYMENT INFO -->
-  <div class="payment-section">
-    <div class="section-title">PAYMENT INFORMATION</div>
-    <p>Method: ${paymentMode?.toUpperCase()}</p>
+  <!-- PAYMENT -->
+  <div class="section">
+    <strong>Payment Method:</strong> ${invoice.paymentMode?.toUpperCase()}
   </div>
 
   <!-- FOOTER -->
@@ -449,64 +331,66 @@ td{
 </html>
 `;
 };
+/* ============================================================
+GET ALL INVOICES (LIST)
+============================================================ */
+const getInvoices = async (req, res) => {
+  try {
+    const invoices = await Invoice.find().sort({ createdAt: -1 });
 
+    const formatted = invoices.map((i) => ({
+      _id: i._id, // ✅ FIXED (CRITICAL)
+      invoiceNo: i.invoiceNo,
+      user: i.user, // ✅ keep full user object
+      type: i.type,
+      total: i.total,
+      createdAt: i.createdAt,
+      status: i.status,
+    }));
+
+    res.json({
+      success: true,
+      data: formatted,
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
 
 /* ============================================================
-   DOWNLOAD ENROLLMENT PDF
+DOWNLOAD INVOICE PDF (MAIN)
 ============================================================ */
 
-const downloadEnrollmentInvoicePDF = async (req, res) => {
+const downloadInvoicePDF = async (req, res) => {
   try {
-    const enrollment = await Enrollment.findById(req.params.id).lean();
-    if (!enrollment)
-      return res.status(404).send("Enrollment not found");
+    const invoice = await Invoice.findById(req.params.id).lean();
 
-    /* ================= SECURITY CHECK ================= */
-    if (
-      String(enrollment.userId) !== String(req.user.id) &&
-      req.user.role !== "admin"
-    ) {
-      return res.status(403).json({
-        message: "You are not allowed to download this invoice",
-      });
+    if (!invoice)
+      return res.status(404).send("Invoice not found");
+
+    let enrollment = null;
+    let rental = null;
+
+    if (invoice.enrollmentId) {
+      enrollment = await Enrollment.findById(invoice.enrollmentId).lean();
     }
 
-    const invoiceNo = generateInvoiceNo(enrollment._id, "ENR");
-
-    const discountRows = (enrollment.discounts || [])
-      .map(
-        (d) => `
-        <div>
-          <span>${d.title || d.code || "Discount"}</span>
-          <span>- ₹${d.discountAmount || 0}</span>
-        </div>
-      `
-      )
-      .join("");
+    if (invoice.turfRentalId) {
+      rental = await TurfRental.findById(invoice.turfRentalId).lean();
+    }
 
     const html = buildInvoiceHTML({
-      invoiceNo,
-      status: enrollment.paymentStatus?.toUpperCase() || "PAID",
-      billedTo: {
-        name: enrollment.playerName,
-        mobile: enrollment.mobile,
-        email: enrollment.email,
-        address: formatAddress(enrollment.address),
-      },
-      itemDescription: `${enrollment.sportName} - ${enrollment.batchName}`,
-      qty: enrollment.durationMonths || 1,
-      rate: enrollment.monthlyFee || 0,
-      subTotal: enrollment.baseAmount || 0,
-      discount: enrollment.totalDiscountAmount || 0,
-      discountRows,
-      grandTotal: enrollment.finalAmount || 0,
-      paymentMode: enrollment.paymentMode,
-      createdAt: enrollment.createdAt,
+      invoice,
+      enrollment,
+      rental,
     });
 
     const browser = await launchBrowser();
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
+
+    await page.setContent(html);
 
     const pdf = await page.pdf({
       format: "A4",
@@ -518,120 +402,50 @@ const downloadEnrollmentInvoicePDF = async (req, res) => {
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename=${invoiceNo}.pdf`
+      `attachment; filename=${invoice.invoiceNo}.pdf`
     );
 
-    return res.end(pdf);
-
+    res.end(pdf);
   } catch (err) {
-    console.error("Enrollment PDF error:", err);
     res.status(500).send(err.message);
   }
 };
 
-/* ============================================================
-   DOWNLOAD TURF PDF
-============================================================ */
-
-const downloadTurfInvoicePDF = async (req, res) => {
+const getInvoiceById = async (req, res) => {
   try {
-    const rental = await TurfRental.findById(req.params.id).lean();
+    const { id } = req.params;
 
-    if (!rental)
-      return res.status(404).send("Turf booking not found");
+    const invoice = await Invoice.findById(id).lean();
 
-    /* ================= SECURITY CHECK ================= */
-    if (
-      String(rental.userId) !== String(req.user.id) &&
-      req.user.role !== "admin"
-    ) {
-      return res.status(403).json({
-        message: "You are not allowed to download this invoice",
-      });
+    if (!invoice) {
+      return res.status(404).json({ message: "Invoice not found" });
     }
 
-    const invoiceNo = generateInvoiceNo(rental._id, "TRF");
+    let enrollment = null;
 
-    /* ================= NEW DISCOUNT LOGIC ================= */
+    if (invoice.enrollmentId) {
+      enrollment = await Enrollment.findById(invoice.enrollmentId).lean();
+    }
 
-    const discountRows = (rental.discounts || [])
-      .map(
-        (d) => `
-        <div>
-          <span>${d.title || d.code || "Discount"} ${
-            d.type === "percentage"
-              ? `(${d.value}%)`
-              : `(₹${d.value})`
-          }</span>
-          <span>- ₹${d.discountAmount || 0}</span>
-        </div>
-      `
-      )
-      .join("");
-
-    const html = buildInvoiceHTML({
-      invoiceNo,
-      status: rental.paymentStatus?.toUpperCase() || "PAID",
-
-      billedTo: {
-        name: rental.userName,
-        mobile: rental.phone,
-        email: rental.email,
+    res.json({
+      success: true,
+      data: {
+        ...invoice,
+        registrationFee: enrollment?.registrationFee || 0, 
       },
-
-      itemDescription: `${rental.sportName} - ${rental.facilityName}`,
-
-      qty: rental.slots?.length || 1,
-
-      // ⚠️ IMPORTANT FIXES
-      rate:
-        rental.hourlyRate || 
-        (rental.baseAmount / (rental.slots?.length || 1)) || 0,
-
-      subTotal: rental.baseAmount || 0,
-
-      discount: rental.totalDiscountAmount || 0,
-
-      discountRows,
-
-      grandTotal: rental.finalAmount || 0,
-
-      paymentMode: rental.paymentMode,
-      createdAt: rental.createdAt,
     });
-
-    const browser = await launchBrowser();
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
-
-    const pdf = await page.pdf({
-      format: "A4",
-      printBackground: true,
-    });
-
-    await browser.close();
-
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename=${invoiceNo}.pdf`
-    );
-
-    return res.end(pdf);
 
   } catch (err) {
-    console.error("Turf PDF error:", err);
-    res.status(500).send(err.message);
+    res.status(500).json({ message: "Failed to fetch invoice" });
   }
 };
 
 /* ============================================================
-   EXPORTS
+EXPORTS
 ============================================================ */
 
 module.exports = {
-  getEnrollmentInvoice,
-  getTurfInvoice,
-  downloadEnrollmentInvoicePDF,
-  downloadTurfInvoicePDF,
+  getInvoices,
+  getInvoiceById,
+  downloadInvoicePDF,
 };

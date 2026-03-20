@@ -1,63 +1,70 @@
 const User = require("../models/User");
 const Enrollment = require("../models/Enrollment");
 const TurfRental = require("../models/TurfRental");
-const FacilitySlot = require("../models/FacilitySlot");
+const Invoice = require("../models/Invoice");
 
 /* ======================================================
    HELPER: SYNC USER SNAPSHOT DATA
 ====================================================== */
+
 async function syncUserSnapshot(updatedUser) {
-  const idString = updatedUser._id.toString();
 
   const filter = {
-    userId: {
-      $in: [updatedUser._id, idString],
-    },
+    userId: updatedUser._id
   };
 
   const updateData = {
-    playerName: updatedUser.name,
+    playerName: updatedUser.fullName,
     mobile: updatedUser.mobile,
     email: updatedUser.email,
-    address: updatedUser.address,
+    address: updatedUser.address
   };
 
   await Promise.all([
     Enrollment.updateMany(filter, { $set: updateData }),
-    TurfRental.updateMany(filter, { $set: updateData }),
+    TurfRental.updateMany(filter, { $set: updateData })
   ]);
-}
 
+}
 
 /* ======================================================
    GET MY PROFILE
 ====================================================== */
+
 exports.getMyProfile = async (req, res) => {
+
   try {
+
     const user = await User.findById(req.user.id)
       .select("-password")
       .lean();
 
     if (!user) {
-      return res.status(404).json({
-        message: "User not found",
-      });
+      return res.status(404).json({ message: "User not found" });
     }
 
     res.json(user);
+
   } catch (err) {
-    console.error("GET MY PROFILE ERROR:", err);
+
+    console.error("GET PROFILE ERROR:", err);
+
     res.status(500).json({
       message: "Failed to fetch profile",
     });
+
   }
+
 };
 
 /* ======================================================
-   UPDATE MY PROFILE
+   UPDATE PROFILE
 ====================================================== */
+
 exports.updateProfile = async (req, res) => {
+
   try {
+
     const userId = req.user.id;
 
     const updatedUser = await User.findByIdAndUpdate(
@@ -67,7 +74,9 @@ exports.updateProfile = async (req, res) => {
     );
 
     if (!updatedUser) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({
+        message: "User not found",
+      });
     }
 
     await syncUserSnapshot(updatedUser);
@@ -78,110 +87,146 @@ exports.updateProfile = async (req, res) => {
     });
 
   } catch (err) {
+
     console.error("PROFILE UPDATE ERROR:", err);
-    res.status(500).json({ message: "Update failed" });
+
+    res.status(500).json({
+      message: "Update failed",
+    });
+
   }
+
 };
+
 /* ======================================================
    GET MY ENROLLMENTS
 ====================================================== */
+
 exports.getMyEnrollments = async (req, res) => {
+
   try {
+
     const enrollments = await Enrollment.find({
-      userId: req.user.id,
+      userId: req.user.id
     })
       .populate({
         path: "batchId",
-        select:
-          "name schedule startDate endDate slotId coachName facilityId",
+        select: "name startTime endTime coachName facilityId"
       })
       .sort({ createdAt: -1 })
       .lean();
 
-    const formatted = [];
+    const formatted = enrollments.map((e) => {
 
-    for (const en of enrollments) {
-      let slotLabel = null;
+      const batchTime = e.batchId
+        ? `${e.batchId.startTime} - ${e.batchId.endTime}`
+        : null;
 
-      if (en.batchId?.slotId) {
-        const slotDoc = await FacilitySlot.findOne({
-          facilityId: en.batchId.facilityId,
-        });
+      return {
+        ...e,
+        batchTime
+      };
 
-        const matched = slotDoc?.slots?.find(
-          (s) => String(s._id) === String(en.batchId.slotId)
-        );
-
-        slotLabel = matched?.label || null;
-      }
-
-      formatted.push({
-        ...en,
-        slotLabel,
-      });
-    }
+    });
 
     res.json(formatted);
+
   } catch (err) {
+
     console.error("MY ENROLLMENTS ERROR:", err);
+
     res.status(500).json({
-      message: "Failed to fetch enrollments",
+      message: "Failed to fetch enrollments"
     });
+
   }
+
 };
 
 /* ======================================================
    GET MY TURF BOOKINGS
 ====================================================== */
+
 exports.getMyTurfBookings = async (req, res) => {
+
   try {
+
     const bookings = await TurfRental.find({
-      userId: req.user.id,
+      userId: req.user.id
     }).sort({ createdAt: -1 });
 
-    const formattedBookings = [];
+    res.json(bookings);
 
-    for (const booking of bookings) {
-      const slotMaster = await FacilitySlot.findOne({
-        facilityId: booking.facilityId,
-      });
-
-      let slotLabels = [];
-
-      if (slotMaster?.slots?.length) {
-        slotLabels = booking.slots.map((startTime) => {
-          const matched = slotMaster.slots.find(
-            (s) => s.startTime === startTime
-          );
-          return matched ? matched.label : startTime;
-        });
-      }
-
-      formattedBookings.push({
-        ...booking.toObject(),
-        slotLabels,
-      });
-    }
-
-    res.json(formattedBookings);
   } catch (err) {
+
     console.error("MY TURF BOOKINGS ERROR:", err);
+
     res.status(500).json({
-      message: "Failed to fetch turf bookings",
+      message: "Failed to fetch turf bookings"
     });
+
   }
+
 };
 
 /* ======================================================
-   CHECK MOBILE (FOR ENROLLMENT FLOW)
+   GET MY INVOICES
 ====================================================== */
-exports.checkMobile = async (req, res) => {
+
+exports.getMyInvoices = async (req, res) => {
+
   try {
+
+    const user = req.user;
+
+    if (!user || !user.mobile) {
+      return res.status(400).json({
+        message: "User mobile not found"
+      });
+    }
+
+    const invoices = await Invoice.find({
+      "user.mobile": user.mobile // ✅ IMPORTANT FIX
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const formatted = invoices.map((inv) => ({
+      _id: inv._id,
+      invoiceNo: inv.invoiceNo,
+      type: inv.type,
+      total: inv.total,
+      status: inv.status,
+      createdAt: inv.createdAt
+    }));
+
+    res.json(formatted);
+
+  } catch (err) {
+
+    console.error("GET MY INVOICES ERROR:", err);
+
+    res.status(500).json({
+      message: "Failed to fetch invoice"
+    });
+
+  }
+
+};
+
+/* ======================================================
+   CHECK MOBILE
+====================================================== */
+
+exports.checkMobile = async (req, res) => {
+
+  try {
+
     const { mobile } = req.params;
 
     const user = await User.findOne({
       mobile,
-      role: "player",
+      role: "player"
     }).select("-password");
 
     if (!user) {
@@ -190,38 +235,49 @@ exports.checkMobile = async (req, res) => {
 
     res.json({
       exists: true,
-      user,
+      user
     });
+
   } catch (err) {
+
     res.status(500).json({
-      message: err.message,
+      message: err.message
     });
+
   }
+
 };
 
 /* ======================================================
-   ADMIN: GET ALL USERS
+   ADMIN GET ALL USERS
 ====================================================== */
+
 exports.getAllUsers = async (req, res) => {
+
   try {
+
     if (req.user.role !== "admin") {
-      return res.status(403).json({ message: "Access denied" });
+      return res.status(403).json({
+        message: "Access denied"
+      });
     }
 
-    const { search, role } = req.query;
+    const { search, role, type } = req.query;
 
     let filter = {};
 
-    if (role) {
-      filter.role = role;
-    }
+    if (role) filter.role = role;
+
+    if (type) filter.userTypes = type;
 
     if (search) {
+
       filter.$or = [
         { fullName: { $regex: search, $options: "i" } },
         { email: { $regex: search, $options: "i" } },
-        { mobile: { $regex: search, $options: "i" } },
+        { mobile: { $regex: search, $options: "i" } }
       ];
+
     }
 
     const users = await User.find(filter)
@@ -230,22 +286,34 @@ exports.getAllUsers = async (req, res) => {
       .lean();
 
     res.json(users);
+
   } catch (err) {
+
     console.error("GET ALL USERS ERROR:", err);
-    res.status(500).json({ message: "Failed to fetch users" });
+
+    res.status(500).json({
+      message: "Failed to fetch users"
+    });
+
   }
+
 };
 
 /* ======================================================
-   ADMIN: GET SINGLE USER
+   ADMIN GET USER
 ====================================================== */
+
 exports.getUserById = async (req, res) => {
+
   try {
+
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    const user = await User.findById(req.params.id)
+    const userId = req.params.id;
+
+    const user = await User.findById(userId)
       .select("-password")
       .lean();
 
@@ -253,22 +321,52 @@ exports.getUserById = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    res.json(user);
+    const enrollments = await Enrollment.find({ userId })
+      .populate({
+        path: "batchId",
+        select: "name startTime endTime coachName"
+      })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const turfBookings = await TurfRental.find({ userId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({
+      user,
+      enrollments,
+      turfBookings
+    });
+
   } catch (err) {
-    res.status(500).json({ message: "Failed to fetch user" });
+    console.error("GET USER DETAILS ERROR:", err);
+    res.status(500).json({
+      message: "Failed to fetch user details"
+    });
   }
 };
 
 /* ======================================================
-   ADMIN: UPDATE USER
+   ADMIN UPDATE USER
 ====================================================== */
+
 exports.adminUpdateUser = async (req, res) => {
+
   try {
+
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Access denied" });
     }
 
     const { password, ...updateData } = req.body;
+
+    /* ================= HANDLE PASSWORD ================= */
+
+    if (password) {
+      const bcrypt = require("bcryptjs");
+      updateData.password = await bcrypt.hash(password, 10);
+    }
 
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
@@ -284,42 +382,153 @@ exports.adminUpdateUser = async (req, res) => {
 
     res.json({
       message: "User updated successfully",
-      user: updatedUser,
+      user: updatedUser
     });
 
   } catch (err) {
+
     console.error("ADMIN UPDATE USER ERROR:", err);
-    res.status(500).json({ message: "Failed to update user" });
+
+    res.status(500).json({
+      message: "Failed to update user"
+    });
+
   }
+
+};
+/* ======================================================
+   ADMIN CREATE STAFF
+====================================================== */
+
+exports.createStaff = async (req, res) => {
+
+  try {
+
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        message: "Only admin can create staff"
+      });
+    }
+
+    const { fullName, email, password, mobile, isActive } = req.body;
+
+    if (!fullName || !email || !password) {
+      return res.status(400).json({
+        message: "Full name, email and password required"
+      });
+    }
+
+    const exists = await User.findOne({
+      email: email.toLowerCase()
+    });
+
+    if (exists) {
+      return res.status(400).json({
+        message: "User already exists"
+      });
+    }
+
+    const bcrypt = require("bcryptjs");
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const staff = await User.create({
+
+      fullName,
+      email: email.toLowerCase(),
+      mobile,
+      password: hashedPassword,
+      role: "staff",
+      source: "admin",
+      userTypes: ["turf"],
+      isActive: isActive ?? true
+
+    });
+
+    res.json({
+
+      message: "Staff created successfully",
+
+      user: {
+        id: staff._id,
+        fullName: staff.fullName,
+        email: staff.email,
+        role: staff.role,
+        isActive: staff.isActive
+      }
+
+    });
+
+  } catch (err) {
+
+    console.error("CREATE STAFF ERROR:", err);
+
+    res.status(500).json({
+      message: "Failed to create staff"
+    });
+
+  }
+
 };
 
 /* ======================================================
-   ADMIN: DELETE USER
+   DELETE USER (SAFE DELETE)
 ====================================================== */
+
 exports.deleteUser = async (req, res) => {
+
   try {
+
     if (req.user.role !== "admin") {
-      return res.status(403).json({ message: "Access denied" });
+      return res.status(403).json({
+        message: "Access denied"
+      });
     }
 
     const user = await User.findById(req.params.id);
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    // Prevent deleting yourself
-    if (String(user._id) === String(req.user.id)) {
-      return res.status(400).json({
-        message: "You cannot delete your own account",
+      return res.status(404).json({
+        message: "User not found"
       });
     }
 
+    if (String(user._id) === String(req.user.id)) {
+
+      return res.status(400).json({
+        message: "You cannot delete your own account"
+      });
+
+    }
+
+    /* ================= DETACH USER FROM HISTORY ================= */
+
+    await Enrollment.updateMany(
+      { userId: user._id },
+      { $set: { userId: null } }
+    );
+
+    await TurfRental.updateMany(
+      { userId: user._id },
+      { $set: { userId: null } }
+    );
+
+    /* ================= DELETE USER ================= */
+
     await User.findByIdAndDelete(req.params.id);
 
-    res.json({ message: "User deleted successfully" });
+    res.json({
+      message: "User deleted but historical bookings preserved"
+    });
+
   } catch (err) {
+
     console.error("DELETE USER ERROR:", err);
-    res.status(500).json({ message: "Failed to delete user" });
+
+    res.status(500).json({
+      message: "Failed to delete user"
+    });
+
   }
+
 };

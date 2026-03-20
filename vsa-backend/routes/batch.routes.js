@@ -1,26 +1,40 @@
-const router = require("express").Router();
+const express = require("express");
+const router = express.Router();
 
 const auth = require("../middleware/auth");
 const role = require("../middleware/role");
-const ctrl = require("../controllers/batch.controller");
 
-/* ======================================================
-   PUBLIC ROUTES
-   - Frontend (users + admin view)
-====================================================== */
-router.get("/", ctrl.getBatches);
+const batchController = require("../controllers/batch.controller");
 
-router.get("/:id", ctrl.getBatchById);
 
-/* ======================================================
-   ADMIN ROUTES
-====================================================== */
+/* ================= PUBLIC ================= */
 
-router.post("/", auth, role(["admin"]), ctrl.createBatch);
+router.get("/", batchController.getBatches);
 
-router.put("/:id", auth, role(["admin"]), ctrl.updateBatch);
-  
-// Delete batch (releases slot if any)
-router.delete("/:id", auth, role(["admin"]), ctrl.deleteBatch);
+router.get("/:id", batchController.getBatchById);
+
+
+/* ================= ADMIN ================= */
+
+router.post(
+  "/",
+  auth,
+  role(["admin"]),
+  batchController.createBatch
+);
+
+router.patch(
+  "/:id",
+  auth,
+  role(["admin"]),
+  batchController.updateBatch
+);
+
+router.delete(
+  "/:id",
+  auth,
+  role(["admin"]),
+  batchController.deleteBatch
+);
 
 module.exports = router;

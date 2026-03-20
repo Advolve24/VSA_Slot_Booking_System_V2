@@ -6,7 +6,9 @@ const { generateToken } = require("../config/jwt");
    ADMIN LOGIN (EMAIL + PASSWORD)
 ====================================================== */
 exports.adminLogin = async (req, res) => {
+
   try {
+
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -17,7 +19,7 @@ exports.adminLogin = async (req, res) => {
 
     const user = await User.findOne({
       email: email.toLowerCase(),
-      role: "admin",
+      role: { $in: ["admin", "staff"] }
     }).select("+password");
 
     if (!user || !user.password) {
@@ -27,28 +29,45 @@ exports.adminLogin = async (req, res) => {
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
+
     if (!isMatch) {
       return res.status(401).json({
         message: "Invalid credentials",
       });
     }
 
+    /* ================= STAFF ACTIVE CHECK ================= */
+
+    if (user.role === "staff" && user.isActive === false) {
+      return res.status(403).json({
+        message: "Staff account is disabled by admin",
+      });
+    }
+
     const token = generateToken(user);
 
     res.json({
-      message: "Admin login successful",
+      message: `${user.role} login successful`,
       token,
       user: {
         id: user._id,
         fullName: user.fullName,
         email: user.email,
         role: user.role,
+        isActive: user.isActive
       },
     });
+
   } catch (err) {
-    console.error("Admin Login Error:", err);
-    res.status(500).json({ message: "Server error" });
+
+    console.error("Login Error:", err);
+
+    res.status(500).json({
+      message: "Server error",
+    });
+
   }
+
 };
 
 /* ======================================================
@@ -83,9 +102,11 @@ exports.playerLogin = async (req, res) => {
         mobile: user.mobile,
         email: user.email,
         age: user.age,
+        gender: user.gender,
+        dateOfBirth: user.dateOfBirth,
         address: user.address,
         role: user.role,
-      },
+      }
     });
   } catch (err) {
     console.error("Player Login Error:", err);

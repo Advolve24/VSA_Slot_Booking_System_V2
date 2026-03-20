@@ -1,28 +1,29 @@
 const router = require("express").Router();
 const auth = require("../middleware/auth");
+const role = require("../middleware/role");
 const ctrl = require("../controllers/user.controller");
 
-/* ================= PLAYER ROUTES ================= */
-
-// My profile
 router.get("/me", auth, ctrl.getMyProfile);
 
-// Update profile
 router.put("/update", auth, ctrl.updateProfile);
 
-// My enrollments
 router.get("/my-enrollments", auth, ctrl.getMyEnrollments);
 
-// My turf bookings
 router.get("/my-turf-bookings", auth, ctrl.getMyTurfBookings);
+
+router.get("/my-invoices", auth, ctrl.getMyInvoices);
 
 router.get("/check-mobile/:mobile", ctrl.checkMobile);
 
+router.post("/create-staff", auth, role(["admin"]), ctrl.createStaff);
 
-/* ================= ADMIN ROUTES ================= */
-router.get("/all", auth, ctrl.getAllUsers);
-router.get("/:id", auth, ctrl.getUserById);
-router.put("/:id", auth, ctrl.adminUpdateUser);
-router.delete("/:id", auth, ctrl.deleteUser);
+router.get("/all", auth, role(["admin"]), ctrl.getAllUsers);
+
+router.put("/:id", auth, role(["admin"]), ctrl.adminUpdateUser);
+
+router.delete("/:id", auth, role(["admin"]), ctrl.deleteUser);
+
+router.get("/:id", auth, role(["admin"]), ctrl.getUserById);
+
 
 module.exports = router;

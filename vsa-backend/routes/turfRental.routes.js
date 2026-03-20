@@ -1,7 +1,9 @@
 const express = require("express");
 const router = express.Router();
 
-/* ================= TURF RENTAL CRUD ================= */
+const auth = require("../middleware/auth");
+const role = require("../middleware/role");
+
 const {
   createTurfRental,
   getTurfRentals,
@@ -9,55 +11,65 @@ const {
   updateTurfRental,
   cancelTurfRental,
   deleteTurfRental,
+  addTurfPayment,
+  previewTurfPrice,
+  approveRefund
 } = require("../controllers/turfRental.controller");
 
-/* ================= SLOT AVAILABILITY ================= */
-const {
-  getFacilitySlots,
-} = require("../controllers/slotAvailability.controller");
 
-/* ================= BLOCKED SLOT (ADMIN) ================= */
-const {
-  blockSlot,
-  getBlockedSlots,
-  getBlockedSlotById,
-  unblockSlotTime,
-  deleteBlockedEntry,
-} = require("../controllers/blockedSlot.controller");
+/* ======================================================
+   PUBLIC ROUTES (WEBSITE BOOKING)
+====================================================== */
 
-/*
-|--------------------------------------------------------------------------
-| SLOT AVAILABILITY (USER + ADMIN)
-|--------------------------------------------------------------------------
-| Uses FacilitySlot + BlockedSlot + TurfRental
-|
-| GET /api/turf-rentals/facilities/:id/slots?date=YYYY-MM-DD
-*/
-router.get("/facilities/:id/slots", getFacilitySlots);
+/* PRICE PREVIEW (PUBLIC) */
+router.post("/preview-price", previewTurfPrice);
 
-/*
-|--------------------------------------------------------------------------
-| BLOCKED SLOTS (ADMIN ONLY)
-|--------------------------------------------------------------------------
-| Blocks ONLY admin-defined active slots
-*/
-router.post("/blocked-slots", blockSlot);
-router.get("/blocked-slots", getBlockedSlots);
-router.get("/blocked-slots/:id", getBlockedSlotById);
-router.delete("/blocked-slots/:id/:startTime", unblockSlotTime);
-router.delete("/blocked-slots/:id", deleteBlockedEntry);
-
-/*
-|--------------------------------------------------------------------------
-| TURF RENTALS
-|--------------------------------------------------------------------------
-| Slot-aware booking logic
-*/
+/* CREATE TURF BOOKING (PUBLIC WEBSITE USER) */
 router.post("/", createTurfRental);
-router.get("/", getTurfRentals);
-router.get("/:id", getTurfRentalById);
-router.patch("/:id", updateTurfRental);
-router.patch("/:id/cancel", cancelTurfRental);
-router.delete("/:id", deleteTurfRental);
+
+/* USER CANCEL BOOKING */
+router.patch("/:id/cancel", auth, cancelTurfRental);
+
+
+/* ======================================================
+   ADMIN ROUTES
+====================================================== */
+
+/* UPDATE BOOKING */
+router.patch("/:id", auth, role(["admin"]), updateTurfRental);
+
+/* DELETE BOOKING */
+router.delete("/:id", auth, role(["admin"]), deleteTurfRental);
+
+/* APPROVE REFUND */
+router.patch(
+  "/:id/approve-refund",
+  auth,
+  role(["admin"]),
+  approveRefund
+);
+
+
+/* ======================================================
+   STAFF + ADMIN
+   (VIEW BOOKINGS)
+====================================================== */
+
+router.get("/", auth, role(["admin", "staff"]), getTurfRentals);
+
+router.get("/:id", auth, role(["admin", "staff"]), getTurfRentalById);
+
+
+/* ======================================================
+   STAFF PAYMENT COLLECTION
+====================================================== */
+
+router.post(
+  "/:id/payments",
+  auth,
+  role(["admin", "staff"]),
+  addTurfPayment
+);
+
 
 module.exports = router;

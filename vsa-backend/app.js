@@ -13,12 +13,11 @@ const enrollmentRoutes = require("./routes/enrollment.routes");
 const paymentRoutes = require("./routes/payment.routes");
 const dashboardRoutes = require("./routes/dashboard.routes");
 const turfRentalRoutes = require("./routes/turfRental.routes");
-const facilitySlotRoutes = require("./routes/facilitySlot.routes");
 const reportsRoutes = require("./routes/reports.routes");
 const invoiceRoutes = require("./routes/invoice.routes");
 const settingsRoutes = require("./routes/settings.routes");
 const discountRoutes = require("./routes/discount.routes");
-
+const blockedTimeRoutes = require("./routes/blockedTime.routes");
 
 
 const app = express();
@@ -74,11 +73,11 @@ app.use("/api/enrollments", enrollmentRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/turf-rentals", turfRentalRoutes);
-app.use("/api/facility-slots", facilitySlotRoutes);
 app.use("/api/reports", reportsRoutes);
 app.use("/api/invoice", invoiceRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/discounts", discountRoutes); 
+app.use("/api/blocked-times", blockedTimeRoutes);
 
 // -------------------------------------------
 // 404 HANDLER
